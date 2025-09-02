@@ -994,11 +994,11 @@ function createUserSession(email) {
     created: new Date().getTime()
   };
   
-  // Store in cache with 24-hour expiration
+  // Store in cache with 6-hour expiration
   CacheService.getScriptCache().put(
-    'session:' + sessionId, 
-    JSON.stringify(userData), 
-    24 * 60 * 60 // 24 hours
+    'session:' + sessionId,
+    JSON.stringify(userData),
+    6 * 60 * 60 // 6 hours
   );
   
   return sessionId;
