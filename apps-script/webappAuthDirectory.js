@@ -139,7 +139,8 @@ function renderLoginPage() {
           if (result.ok) {
             showMsg('Login successful! Redirecting...', 'success');
             // Simple redirect that should work
-            window.location.href = '?session=' + result.sessionId;
+            const base = window.location.href.split('?')[0];
+            window.location.href = base + '?session=' + result.sessionId;
           } else {
             showMsg(result.error || 'Login failed', 'error');
             btn.disabled = false;
