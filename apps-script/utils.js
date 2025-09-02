@@ -856,10 +856,22 @@ function addAdminBackfillMenu_() {
     .addToUi();
 }
 
-// Call this from your existing onOpen() or add this standalone onOpen:
+// Call this from your existing onOpen(), or use this helper name if needed.
+function onOpenBackfill_() {
+  try { addAdminBackfillMenu_(); } catch(_) {}
+}
+
+// Provide a generic onOpen so existing installable triggers named "onOpen" keep working.
+// It composes both the Backfill menu and the Admin menu if available.
 function onOpen() {
   try { addAdminBackfillMenu_(); } catch(_) {}
-  // if you already have an onOpen elsewhere, just call addAdminBackfillMenu_() in it
+  try {
+    if (typeof showMenuSafe === 'function') {
+      showMenuSafe();
+    } else if (typeof showMenu === 'function') {
+      showMenu();
+    }
+  } catch(_) {}
 }
 
 /** === Queue storage === **/

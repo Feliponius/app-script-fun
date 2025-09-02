@@ -157,9 +157,10 @@ function debugPing(name) {
  * Menu
  * =========================== */
 function onOpen() { 
-  try { applyEventsAutoHide_(); } catch(err) { logError && logError('applyEventsAutoHide_onOpen', err); }
-
-  showMenu(); }
+  try { applyEventsAutoHide_(); } catch(err) { try { logError && logError('applyEventsAutoHide_onOpen', err); } catch(_){} }
+  showMenuSafe();
+  try { addAdminBackfillMenu_(); } catch(_) {}
+}
 
 function showMenu() {
   const ui = SpreadsheetApp.getUi();
@@ -820,3 +821,41 @@ function applyEventsAutoHide_(){
   batchHideRows_(sh, rowsToHide);
 }
 
+// Added by Codex: safe menu builder with ASCII labels
+function showMenuSafe() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('Admin Tools')
+    .addSubMenu(
+      ui.createMenu('System Tools')
+        .addItem('Refresh Form Lists Now', 'refreshFormLists')
+        .addItem('Restore Validations Only', 'restoreEventsValidations')
+        .addItem('Clear Last Row', 'clearLastRow')
+        .addItem('Back Fill Pdfs', 'addAdminBackfillMenu_')
+        .addItem('Apply Auto-Hide Now', 'applyEventsAutoHide_')
+        .addItem('Reset Events Board (TEST ONLY)', 'resetEventsBoard')
+    )
+    .addSubMenu(
+      ui.createMenu('Employee Tools')
+        .addItem('Employee Lookup', 'employeeLookup')
+    )
+    .addSubMenu(
+      ui.createMenu('Reports & Monitoring')
+        .addItem('Probation Watchlist', 'probationWatchlist')
+    )
+    .addToUi();
+}
+
+// Install an installable onOpen trigger for this spreadsheet if needed
+function ensureOnOpenTrigger() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) { Logger.log('ensureOnOpenTrigger: no active spreadsheet'); return 'No active spreadsheet'; }
+    const existing = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction && t.getHandlerFunction() === 'onOpen');
+    if (existing && existing.length) return 'onOpen trigger already installed';
+    ScriptApp.newTrigger('onOpen').forSpreadsheet(ss).onOpen().create();
+    return 'Installed onOpen trigger';
+  } catch (e) {
+    Logger.log('ensureOnOpenTrigger error: ' + String(e));
+    return 'ensureOnOpenTrigger error: ' + String(e);
+  }
+}

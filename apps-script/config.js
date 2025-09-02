@@ -78,7 +78,11 @@ var CONFIG = {
     PositiveAction: 'PositiveAction',          // alias in addition to PositiveActionType
     LinkedEventID: 'Linked_Event_ID',          // common alias used in helpers
     WriteUpPDF: 'Write-Up PDF',                // some code uses WriteUpPDF
-    SignedPDFLink: 'Signed_PDF_Link'           // some code uses SignedPDFLink
+    SignedPDFLink: 'Signed_PDF_Link',
+
+    // New appeal columns
+    AppealStatus: 'Appeal Status',
+    AppealExplanation: 'Appeal Explanation'
   },
 
   // Director-only actions (not used by v2.1 but left for compatibility)

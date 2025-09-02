@@ -1,11 +1,16 @@
 // ============== Low-level sender (with backoff) ===================
 function postSlack_(webhookUrl, payload){
-  if (!webhookUrl){
+  var url = String(webhookUrl || '').trim();
+  if (!url){
     logError('postSlack_missing_url', new Error('No webhook URL'), {payload:payload});
     return false;
   }
+  if (url.indexOf('https://hooks.slack.com/services/') !== 0){
+    logError('postSlack_invalid_url', new Error('Webhook URL not recognized'), {url:url});
+    return false;
+  }
   return withBackoff_('postSlack', function(){
-    var res = UrlFetchApp.fetch(webhookUrl, {
+    var res = UrlFetchApp.fetch(url, {
       method: 'post',
       contentType: 'application/json; charset=utf-8',
       muteHttpExceptions: true,
@@ -15,7 +20,17 @@ function postSlack_(webhookUrl, payload){
     var body = res.getContentText();
     logInfo_('postSlack_http', {code:code, body:body.slice(0,500)});
     if (code >= 200 && code < 300) return true;
-    throw new Error('Slack HTTP '+code+': '+body);
+    // Friendly diagnostics for common Slack failures
+    var hint = '';
+    var b = String(body||'').toLowerCase();
+    if (code === 404 && (/no_service/.test(b) || /invalid_webhook/.test(b))){
+      hint = 'Webhook disabled or app uninstalled; recreate the Incoming Webhook in Slack and update CONFIG.';
+    } else if (code === 410){
+      hint = 'Webhook gone (410). Regenerate the webhook in your Slack app.';
+    } else if (code === 400 && /invalid_payload/.test(b)){
+      hint = 'Invalid payload; check text length/format and mrkdwn.';
+    }
+    throw new Error('Slack HTTP '+code+': '+body + (hint ? ' | Hint: '+hint : ''));
   }, 4, 250);
 }
 
@@ -252,7 +267,6 @@ function onEdit_NotifyLeadersOnClaim_(e){
     logError && logError('onEdit_NotifyLeadersOnClaim_', err);
   }
 }
-
 
 
 
