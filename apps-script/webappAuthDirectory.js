@@ -6,274 +6,589 @@
 
 /* ========= CONFIG (EDIT) ========= */
 const AUTH = {
-  DIRECTORS: ['you@gmail.com','director1@gmail.com'],             // TODO: your director emails
-  PEPPER: 'change-this-long-random-secret-string-please',          // TODO: a long random secret
+  PEPPER: '8f2h9k4m7p3q5w6e8r9t2y4u8i3o5p7a9s2d5f8g3h7j4k6l8z9x2c5v8b3n7m', // ⚠️ CHANGE THIS TO A SECURE RANDOM STRING
   OTP_TTL_MIN: 10,
   RESET_TTL_MIN: 15,
-  SESSION_TTL_MIN: 60*24, // 24h
+  SESSION_TTL_MIN: 60*24, // 24 hours
 };
 
 const TABS = { DIRECTORY: 'Directory', REQUESTS: 'AccessRequests', EVENTS: 'Events' };
 const DIR_COLS = ['Email','Employee','Role','Verified','Salt','PassHash','CreatedAt','UpdatedAt','LastLogin'];
 const REQ_COLS = ['RequestedAt','Email','Employee','Status'];
 
+// Add this missing function
+function now_(){
+  const tz = Session.getScriptTimeZone() || 'UTC';
+  return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm');
+}
+
+// Add these other missing utility functions
+function norm_(s){ 
+  return String(s || '').trim().toLowerCase(); 
+}
+
+function firstIdx_(hdr, names){ 
+  for (var i=0;i<names.length;i++){ 
+    const k=hdr.indexOf(names[i]); 
+    if(k!==-1) return k; 
+  } 
+  return -1; 
+}
+
+function getCaller_(){
+  return String(Session.getActiveUser().getEmail() || '').toLowerCase();
+}
+
 /* ========= UI ========= */
 function doGet(e){
+  try {
+    console.log('🚀 doGet called with parameters:', e);
+    
+    const sessionId = e.parameter.session;
+    console.log('🎫 Session ID:', sessionId);
+    
+    const user = sessionId ? getUserFromSession(sessionId) : null;
+    console.log('👤 User from session:', user);
+    
+    if (!user) {
+      console.log('❌ No user found, rendering login page');
+      return renderLoginPage();
+    }
+    
+    console.log('🎯 User role:', user.role);
+    
+    // Route based on user role
+    switch(user.role) {
+      case 'director':
+        console.log('🎬 Rendering director dashboard');
+        return renderDirectorDashboard(user);
+      case 'lead':
+        console.log('👥 Rendering lead dashboard');
+        return renderLeadDashboard(user);
+      case 'employee':
+      default:
+        console.log('👷 Rendering employee dashboard');
+        return renderEmployeeDashboard(user);
+    }
+  } catch (error) {
+    console.log('💥 Error in doGet:', error);
+    Logger.log('Error in doGet: ' + error);
+    return HtmlService.createHtmlOutput('<h1>Error</h1><p>' + error + '</p>');
+  }
+}
+
+function renderLoginPage() {
   return HtmlService.createHtmlOutput(`
-<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CLEAR — Sign in</title>
-<style>
-  body{font-family:Inter,Arial;margin:24px;max-width:820px}
-  .card{border:1px solid #e5e7eb;border-radius:16px;padding:16px;margin:0 0 16px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
-  .muted{color:#6b7280}.small{font-size:12px}
-  input,button{padding:10px;border-radius:10px;border:1px solid #e5e7eb}
-  button{cursor:pointer}
-  .row{display:flex;gap:8px;flex-wrap:wrap}
-  table{width:100%;border-collapse:collapse;margin-top:10px}
-  th,td{border-bottom:1px solid #f3f4f6;text-align:left;padding:8px}
-  th{font-weight:600;font-size:12px;color:#4b5563;text-transform:uppercase}
-  .right{float:right}
-  a{color:#2563eb;text-decoration:none}
-</style>
-
-<div id="signin" class="card">
-  <h2>CLEAR — Sign in</h2>
-  <div class="small muted">Use the email we have on file for you.</div>
-  <div class="row" style="margin-top:8px">
-    <input id="email" placeholder="you@example.com" style="min-width:260px" autocomplete="email">
-    <input id="password" type="password" placeholder="Password (if set)" style="min-width:260px">
+<!DOCTYPE html>
+<html>
+<head>
+  <title>CLEAR — Login</title>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    .container { max-width: 400px; margin: 0 auto; }
+    h1 { text-align: center; color: #333; }
+    .form-group { margin: 15px 0; }
+    label { display: block; margin-bottom: 5px; }
+    input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+    button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    .msg { margin: 10px 0; padding: 10px; border-radius: 4px; }
+    .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>CLEAR Login</h1>
+    
+    <div class="form-group">
+      <label for="email">Email:</label>
+      <input type="email" id="email" required>
+    </div>
+    
+    <div class="form-group">
+      <label for="password">Password:</label>
+      <input type="password" id="password" required>
+    </div>
+    
+    <button id="loginBtn" onclick="login()">Sign In</button>
+    
+    <div id="msg"></div>
   </div>
-  <div class="row">
-    <button onclick="login()">Sign in</button>
-    <button onclick="sendOtp()">Send code instead</button>
-    <button onclick="showCreate()">Create password</button>
-    <button onclick="showReset()">Forgot password</button>
-    <span id="msg" class="small muted"></span>
-  </div>
-</div>
 
-<div id="create" class="card" style="display:none">
-  <h3>Create password</h3>
-  <div class="small muted">We’ll verify your email first.</div>
-  <div class="row" style="margin-top:8px">
-    <input id="cEmail" placeholder="you@example.com" style="min-width:260px">
-    <input id="cEmployee" placeholder="Your name as in system (for first-time claim)" style="min-width:260px">
-    <button onclick="sendOtpCreate()">Send verify code</button>
-  </div>
-  <div class="row" id="cCodeRow" style="display:none">
-    <input id="cCode" placeholder="6-digit code" maxlength="6" style="max-width:140px">
-    <input id="cPass1" type="password" placeholder="New password" style="min-width:220px">
-    <input id="cPass2" type="password" placeholder="Repeat password" style="min-width:220px">
-    <button id="btnSetPwd" onclick="finishCreate()">Set password</button>
-  </div>
-  <div id="cMsg" class="small muted"></div>
-</div>
-
-<div id="reset" class="card" style="display:none">
-  <h3>Reset password</h3>
-  <div class="row">
-    <input id="rEmail" placeholder="you@example.com" style="min-width:260px">
-    <button onclick="startReset()">Send reset code</button>
-  </div>
-  <div class="row" id="rCodeRow" style="display:none">
-    <input id="rCode" placeholder="6-digit code" maxlength="6" style="max-width:140px">
-    <input id="rPass1" type="password" placeholder="New password" style="min-width:220px">
-    <input id="rPass2" type="password" placeholder="Repeat password" style="min-width:220px">
-    <button onclick="finishReset()">Reset</button>
-  </div>
-  <div id="rMsg" class="small muted"></div>
-</div>
-
-<div id="app" class="card" style="display:none">
-  <div class="small muted" id="who"></div>
-  <h3>Current Effective Points</h3>
-  <div id="points" style="font-size:28px;font-weight:700;margin-bottom:8px">—</div>
-  <h3>Grace Available</h3>
-  <div id="grace" style="font-size:22px;margin-bottom:8px">—</div>
-  <h3>Work History</h3>
-  <div class="small muted" id="summary"></div>
-  <table><thead><tr><th>Date</th><th>Event</th><th>Infraction/Notes</th><th>Pts</th><th>Roll</th><th>Lead</th><th>PDF</th></tr></thead>
-  <tbody id="rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody></table>
-</div>
-
-<script>
-// ---------- helpers ----------
-function $(id){ return document.getElementById(id); }
-function safeShow(id){ var el=$(id); if (el) el.style.display='block'; }
-function safeHide(id){ var el=$(id); if (el) el.style.display='none'; }
-function msg(id, text){ var el=$(id); if (el) el.textContent = text || ''; }
-function esc(s){
-  return String(s||'').replace(/[&<>"']/g, function(m){
-    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}[m]);
-  });
-}
-function link(u,t){ return u ? '<a target="_blank" rel="noopener" href="'+esc(u)+'">'+esc(t||'View')+'</a>' : ''; }
-
-function showCreate(){ safeShow('create'); safeHide('reset'); }
-function showReset(){ safeShow('reset'); safeHide('create'); }
-
-// ---------- auth actions ----------
-function login(){
-  const email = $('email')?.value.trim() || '';
-  const pass  = $('password')?.value || '';
-  msg('msg','Signing in…');
-
-  google.script.run
-    .withSuccessHandler(function(res){
-      if(!res || !res.ok){ msg('msg', (res && res.error) || 'Login failed'); return; }
-      msg('msg','Loading your data…');
-      loadData(res.email);
-    })
-    .withFailureHandler(function(err){
-      msg('msg','Login error: ' + (err && err.message ? err.message : String(err)));
-    })
-    .loginWithPassword(email, pass);
-}
-
-function sendOtp(){
-  const email = $('email')?.value.trim() || '';
-  msg('msg','Sending code…');
-  google.script.run
-    .withSuccessHandler(function(r){ msg('msg', r && r.ok ? 'Code sent — check email' : (r && r.error || 'Unable to send code')); })
-    .withFailureHandler(function(err){ msg('msg','Error: ' + (err && err.message ? err.message : String(err))); })
-    .requestSigninCode(email);
-}
-
-function sendOtpCreate(){
-  const email = $('cEmail')?.value.trim() || '';
-  const emp   = $('cEmployee')?.value.trim() || '';
-  msg('cMsg','Sending verify code…');
-  google.script.run
-    .withSuccessHandler(function(r){
-      if(r && r.ok){ safeShow('cCodeRow'); msg('cMsg','Code sent.'); }
-      else { msg('cMsg', r && r.error || 'Failed'); }
-    })
-    .withFailureHandler(function(err){ msg('cMsg','Error: ' + (err && err.message ? err.message : String(err))); })
-    .requestCreateCode(email, emp);
-}
-
-function finishCreate(){
-  const email = $('cEmail')?.value.trim() || '';
-  const code  = $('cCode')?.value.trim() || '';
-  const p1    = $('cPass1')?.value || '';
-  const p2    = $('cPass2')?.value || '';
-
-  if (!email || !code){ msg('cMsg','Enter your email and the 6-digit code'); return; }
-  if (p1 !== p2){ msg('cMsg','Passwords do not match'); return; }
-  if (p1.length < 8){ msg('cMsg','Password must be at least 8 characters'); return; }
-
-  const btn = $('btnSetPwd'); if (btn) btn.disabled = true;
-  msg('cMsg','Setting password…');
-
-  google.script.run
-    .withSuccessHandler(function(r){
-      if (!r || !r.ok){
-        msg('cMsg', (r && r.error) ? String(r.error) : 'Error');
-        if (btn) btn.disabled = false;
+  <script>
+    function $(id) { return document.getElementById(id); }
+    
+    function login() {
+      var email = $('email').value;
+      var password = $('password').value;
+      
+      if (!email || !password) {
+        showMsg('Please enter email and password', 'error');
         return;
       }
-      msg('cMsg','✅ Password set. You can sign in above.');
-      safeHide('cCodeRow');
-      if ($('cPass1')) $('cPass1').value = '';
-      if ($('cPass2')) $('cPass2').value = '';
-      if (btn) btn.disabled = false;
-    })
-    .withFailureHandler(function(err){
-      msg('cMsg','Error: ' + (err && err.message ? err.message : String(err)));
-      if (btn) btn.disabled = false;
-    })
-    .completeCreate(email, code, p1);
+      
+      var btn = $('loginBtn');
+      btn.disabled = true;
+      btn.textContent = 'Signing in...';
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.ok) {
+            showMsg('Login successful! Redirecting...', 'success');
+            // Simple redirect that should work
+            window.location.href = '?session=' + result.sessionId;
+          } else {
+            showMsg(result.error || 'Login failed', 'error');
+            btn.disabled = false;
+            btn.textContent = 'Sign In';
+          }
+        })
+        .withFailureHandler(function(error) {
+          showMsg('Login error: ' + error.message, 'error');
+          btn.disabled = false;
+          btn.textContent = 'Sign In';
+        })
+        .loginWithPassword(email, password);
+    }
+    
+    function showMsg(text, type) {
+      var msgDiv = $('msg');
+      msgDiv.textContent = text;
+      msgDiv.className = 'msg ' + (type || 'error');
+    }
+  </script>
+</body>
+</html>
+  `).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 
-function startReset(){
-  const email = $('rEmail')?.value.trim() || '';
-  msg('rMsg','Sending reset code…');
-  google.script.run
-    .withSuccessHandler(function(r){
-      if(r && r.ok){ safeShow('rCodeRow'); msg('rMsg','Code sent.'); }
-      else { msg('rMsg', r && r.error || 'Error'); }
-    })
-    .withFailureHandler(function(err){ msg('rMsg','Error: ' + (err && err.message ? err.message : String(err))); })
-    .requestResetCode(email);
+function closeAndReopenWithSession(sessionId) {
+  // This function doesn't need to do anything - it's just called to ensure
+  // the google.script.run pipeline is properly closed before we close the host
+  console.log('📤 closeAndReopenWithSession called with:', sessionId);
+  return true;
 }
 
-function finishReset(){
-  const email = $('rEmail')?.value.trim() || '';
-  const code  = $('rCode')?.value.trim() || '';
-  const p1    = $('rPass1')?.value || '';
-  const p2    = $('rPass2')?.value || '';
-  if (p1 !== p2){ msg('rMsg','Passwords do not match'); return; }
-
-  google.script.run
-    .withSuccessHandler(function(r){
-      msg('rMsg', r && r.ok ? 'Password reset — sign in above.' : (r && r.error || 'Error'));
-      if (r && r.ok) safeHide('rCodeRow');
-    })
-    .withFailureHandler(function(err){ msg('rMsg','Error: ' + (err && err.message ? err.message : String(err))); })
-    .completeReset(email, code, p1);
-}
-
-// ---------- data load ----------
-function loadData(email){
-  google.script.run
-    .withSuccessHandler(function(data){
-      safeHide('signin');
-      safeShow('app');
-
-      if ($('who')) $('who').textContent =
-        'Signed in as ' + email + ' — records for ' + (data && data.employee || '(not found)');
-      if ($('points')) $('points').textContent =
-        (data && data.effectivePoints != null) ? String(data.effectivePoints) : '—';
-      if ($('grace')) $('grace').textContent =
-        (data && data.graceAvailableText) ? data.graceAvailableText :
-        (data && data.graceAvailable != null ? String(data.graceAvailable) : '—');
-
-      const body = $('rows');
-      if (body){
-        body.innerHTML = '';
-        const rows = (data && data.rows) || [];
-        if (!rows.length){
-          body.innerHTML = '<tr><td colspan="7" class="muted">No history yet.</td></tr>';
-        } else {
-          rows.forEach(function(r){
-            const tr = document.createElement('tr');
-            tr.innerHTML =
-              '<td>'+ (r.date||'') +'</td>'+
-              '<td>'+ (r.event||'') +'</td>'+
-              '<td>'+ (r.infraction||'') + (r.notes?'<div class="small muted">'+esc(r.notes)+'</div>':'') +'</td>'+
-              '<td>'+ (r.points==null?'':String(r.points)) +'</td>'+
-              '<td>'+ (r.roll==null?'':String(r.roll)) +'</td>'+
-              '<td>'+ (r.lead||'') +'</td>'+
-              '<td>'+ (r.pdfUrl?('<a target="_blank" rel="noopener" href="'+esc(r.pdfUrl)+'">View PDF</a>'):'') +'</td>';
-            body.appendChild(tr);
-          });
+// Add this function to handle different dashboard types
+function renderDirectorDashboard(user) {
+  return HtmlService.createHtmlOutput(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>CLEAR — Director Dashboard</title>
+      <style>
+        .director-nav { display: flex; gap: 10px; margin-bottom: 20px; }
+        .director-nav button { padding: 10px 15px; background: #2563eb; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .director-nav button:hover { background: #1d4ed8; }
+        .content-area { padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .stat-card { background: #f8fafc; padding: 15px; border-radius: 8px; text-align: center; }
+        .stat-number { font-size: 24px; font-weight: bold; color: #dc2626; }
+        .pending-milestones { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 10px; margin: 10px 0; }
+        .logout-btn { background: #dc2626; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; float: right; margin-bottom: 10px; }
+        .logout-btn:hover { background: #b91c1c; }
+      </style>
+    </head>
+    <body>
+      <button class="logout-btn" id="logoutBtn">Logout</button>
+      <h1>Director Dashboard</h1>
+      
+      <nav class="director-nav">
+        <button id="employeeSearchBtn">Employee Search</button>
+        <button id="pendingMilestonesBtn">Pending Milestones</button>
+        <button id="graceRequestsBtn">Grace Requests</button>
+        <button id="reportsBtn">Reports</button>
+        <button id="bulkOperationsBtn">Bulk Operations</button>
+      </nav>
+      
+      <div id="content-area">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <h3>Pending Milestones</h3>
+            <div class="stat-number" id="pendingCount">—</div>
+          </div>
+          <div class="stat-card">
+            <h3>Active Probation</h3>
+            <div class="stat-number" id="probationCount">—</div>
+          </div>
+          <div class="stat-card">
+            <h3>Grace Requests</h3>
+            <div class="stat-number" id="graceCount">—</div>
+          </div>
+          <div class="stat-card">
+            <h3>This Month's Events</h3>
+            <div class="stat-number" id="eventsCount">—</div>
+          </div>
+        </div>
+        
+        <div id="pending-milestones-list">
+          <!-- Dynamic content loaded here -->
+        </div>
+      </div>
+      
+      <script>
+        // ---------- Helper Functions ----------
+        function $(id) { return document.getElementById(id); }
+        
+        // ---------- Event Listeners Setup ----------
+        document.addEventListener('DOMContentLoaded', function() {
+          console.log('🎯 DIRECTOR DASHBOARD LOADED');
+          
+          // Attach button event listeners
+          $('logoutBtn').addEventListener('click', logout);
+          $('employeeSearchBtn').addEventListener('click', showEmployeeSearch);
+          $('pendingMilestonesBtn').addEventListener('click', showPendingMilestones);
+          $('graceRequestsBtn').addEventListener('click', showGraceRequests);
+          $('reportsBtn').addEventListener('click', showReports);
+          $('bulkOperationsBtn').addEventListener('click', showBulkOperations);
+          
+          // Load dashboard data
+          loadDashboardData();
+        });
+        
+        function logout() {
+          console.log('Director logout clicked');
+          window.location.href = window.location.href.split('?')[0];
         }
-      }
-      if ($('summary')) $('summary').textContent = 'Last updated: ' + (data && data.generatedAt || '');
-      msg('msg','');
-    })
-    .withFailureHandler(function(err){
-      msg('msg','Data error: ' + (err && err.message ? err.message : String(err)));
-    })
-    .getMyOverviewForEmail(email);
+        
+        // ---------- Dashboard Functions ----------
+        function loadDashboardData() {
+          console.log('Loading director dashboard data...');
+          
+          google.script.run
+            .withSuccessHandler(function(data) {
+              console.log('✅ Director dashboard data received:', data);
+              
+              $('pendingCount').textContent = data.pendingMilestones || 0;
+              $('probationCount').textContent = data.activeProbation || 0;
+              $('graceCount').textContent = data.graceRequests || 0;
+              $('eventsCount').textContent = data.monthlyEvents || 0;
+              
+              // Load pending milestones
+              loadPendingMilestones();
+            })
+            .withFailureHandler(function(err) {
+              console.error('❌ Error loading director dashboard data:', err);
+              $('pendingCount').textContent = 'Error';
+              $('probationCount').textContent = 'Error';
+              $('graceCount').textContent = 'Error';
+              $('eventsCount').textContent = 'Error';
+            })
+            .getDirectorDashboardData();
+        }
+          
+        function loadPendingMilestones() {
+          console.log('Loading pending milestones...');
+          
+          google.script.run
+            .withSuccessHandler(function(milestones) {
+              const container = $('pending-milestones-list');
+              if (milestones.length === 0) {
+                container.innerHTML = '<p>No pending milestones.</p>';
+                return;
+              }
+              
+              let html = '<h3>Pending Milestones Requiring Attention</h3>';
+              milestones.forEach(function(milestone) {
+                html += '<div class="pending-milestones">' +
+                  '<strong>' + milestone.employee + '</strong> - ' + milestone.milestone + 
+                  ' (Row: ' + milestone.row + ')' +
+                  '<button onclick="assignDirector(' + milestone.row + ')">Assign Director</button>' +
+                  '<button onclick="viewDetails(' + milestone.row + ')">View Details</button>' +
+                  '</div>';
+              });
+              container.innerHTML = html;
+            })
+            .withFailureHandler(function(err) {
+              console.error('❌ Error loading pending milestones:', err);
+              $('pending-milestones-list').innerHTML = '<p>Error loading milestones</p>';
+            })
+            .getPendingMilestones();
+        }
+        
+        function assignDirector(row) {
+          const director = prompt('Enter director name:');
+          if (director) {
+            google.script.run
+              .withSuccessHandler(function() { loadPendingMilestones(); })
+              .assignMilestoneDirector(row, director);
+          }
+        }
+        
+        function showEmployeeSearch() {
+          console.log('Showing employee search');
+          $('content-area').innerHTML = '<h3>Employee Search</h3><input type="text" id="searchInput" placeholder="Search employees..."><button onclick="searchEmployees()">Search</button><div id="searchResults"></div>';
+        }
+        
+        function showPendingMilestones() {
+          console.log('Showing pending milestones');
+          $('content-area').innerHTML = '<h3>Pending Milestones</h3><div id="milestones-container">Loading...</div>';
+          loadPendingMilestones();
+        }
+        
+        function showGraceRequests() {
+          console.log('Showing grace requests');
+          $('content-area').innerHTML = '<h3>Grace Requests</h3><div id="grace-container">Coming soon...</div>';
+        }
+        
+        function showReports() {
+          console.log('Showing reports');
+          $('content-area').innerHTML = '<h3>Reports</h3><button onclick="generateMonthlyReport()">Generate Monthly Report</button><div id="report-container"></div>';
+        }
+        
+        function showBulkOperations() {
+          console.log('Showing bulk operations');
+          $('content-area').innerHTML = '<h3>Bulk Operations</h3><div id="bulk-container">Coming soon...</div>';
+        }
+      </script>
+    </body>
+    </html>
+  `).setTitle('CLEAR — Director Dashboard');
 }
-</script>
-  `).setTitle('CLEAR — Sign in');
+
+// For directors
+function renderLeadDashboard(user) {
+  return HtmlService.createHtmlOutput(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>CLEAR — Lead Dashboard</title>
+      <style>
+        .lead-nav { display: flex; gap: 10px; margin-bottom: 20px; }
+        .lead-nav button { padding: 10px 15px; background: #2563eb; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .lead-nav button:hover { background: #1d4ed8; }
+        .content-area { padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .stat-card { background: #f8fafc; padding: 15px; border-radius: 8px; text-align: center; }
+        .stat-number { font-size: 24px; font-weight: bold; color: #dc2626; }
+        .pending-milestones { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 10px; margin: 10px 0; }
+      </style>
+    </head>
+    <body>
+      <h1>Lead Dashboard</h1>
+      
+      <nav class="lead-nav">
+        <button onclick="showEmployeeSearch()">Employee Search</button>
+        <button onclick="showPendingMilestones()">Pending Milestones</button>
+        <button onclick="showReports()">Reports</button>
+        <button onclick="showGraceRequests()">Grace Requests</button>
+      </nav>
+      
+      <div id="content-area">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <h3>Pending Milestones</h3>
+            <div class="stat-number" id="pendingCount">—</div>
+          </div>
+          <div class="stat-card">
+            <h3>Active Probation</h3>
+            <div class="stat-number" id="probationCount">—</div>
+          </div>
+          <div class="stat-card">
+            <h3>Grace Requests</h3>
+            <div class="stat-number" id="graceCount">—</div>
+          </div>
+          <div class="stat-card">
+            <h3>This Month's Events</h3>
+            <div class="stat-number" id="eventsCount">—</div>
+          </div>
+        </div>
+        
+        <div id="pending-milestones-list">
+          <!-- Dynamic content loaded here -->
+        </div>
+      </div>
+      
+      <script>
+        // Load dashboard data
+        google.script.run
+          .withSuccessHandler(function(data) {
+            document.getElementById('pendingCount').textContent = data.pendingMilestones || 0;
+            document.getElementById('probationCount').textContent = data.activeProbation || 0;
+            document.getElementById('graceCount').textContent = data.graceRequests || 0;
+            document.getElementById('eventsCount').textContent = data.monthlyEvents || 0;
+            
+            // Load pending milestones
+            loadPendingMilestones();
+          })
+          .getDirectorDashboardData();
+          
+        function loadPendingMilestones() {
+          google.script.run
+            .withSuccessHandler(function(milestones) {
+              const container = document.getElementById('pending-milestones-list');
+              if (milestones.length === 0) {
+                container.innerHTML = '<p>No pending milestones.</p>';
+                return;
+              }
+              
+              let html = '<h3>Pending Milestones Requiring Attention</h3>';
+              milestones.forEach(function(milestone) {
+                html += '<div class="pending-milestones">' +
+                  '<strong>' + milestone.employee + '</strong> - ' + milestone.milestone + 
+                  ' (Row: ' + milestone.row + ')' +
+                  '<button onclick="assignDirector(' + milestone.row + ')">Assign Director</button>' +
+                  '<button onclick="viewDetails(' + milestone.row + ')">View Details</button>' +
+                  '</div>';
+              });
+              container.innerHTML = html;
+            })
+            .getPendingMilestones();
+        }
+        
+        function assignDirector(row) {
+          const director = prompt('Enter director name:');
+          if (director) {
+            google.script.run
+              .withSuccessHandler(function() { loadPendingMilestones(); })
+              .assignMilestoneDirector(row, director);
+          }
+        }
+        
+        function showEmployeeSearch() {
+          // Switch to employee search view
+          document.getElementById('content-area').innerHTML = '<h3>Employee Search</h3><input type="text" id="searchInput" placeholder="Search employees..."><button onclick="searchEmployees()">Search</button><div id="searchResults"></div>';
+        }
+        
+        function showPendingMilestones() {
+          document.getElementById('content-area').innerHTML = '<h3>Pending Milestones</h3><div id="milestones-container">Loading...</div>';
+          loadPendingMilestones();
+        }
+        
+        function showReports() {
+          document.getElementById('content-area').innerHTML = '<h3>Reports</h3><button onclick="generateMonthlyReport()">Generate Monthly Report</button><div id="report-container"></div>';
+        }
+      </script>
+    </body>
+    </html>
+  `).setTitle('CLEAR — Lead Dashboard');
+}
+
+function renderEmployeeDashboard(user) {
+  return HtmlService.createHtmlOutput(`
+<!DOCTYPE html>
+<html>
+<head>
+  <title>CLEAR — Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .card { border: 1px solid #ddd; padding: 20px; margin: 10px 0; border-radius: 8px; }
+    .logout-btn { background: #dc2626; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; float: right; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <button class="logout-btn" onclick="logout()">Logout</button>
+    <h1>My CLEAR Dashboard</h1>
+    <p>Welcome, ` + (user.employee || user.email) + `!</p>
+    <p>Your role: ` + (user.role || 'employee') + `</p>
+  </div>
+
+  <div class="card">
+    <h2>Current Status</h2>
+    <div id="points">Loading points...</div>
+    <div id="grace">Loading grace status...</div>
+  </div>
+
+  <div class="card">
+    <h2>Your History</h2>
+    <div id="history">Loading history...</div>
+  </div>
+
+  <script>
+    function logout() {
+      window.location.href = window.location.href.split('?')[0];
+    }
+    
+    // Load dashboard data
+    google.script.run
+      .withSuccessHandler(function(data) {
+        document.getElementById('points').textContent = 'Points: ' + (data.effectivePoints || '—');
+        document.getElementById('grace').textContent = 'Grace: ' + (data.graceAvailableText || '—');
+        
+        if (data.rows && data.rows.length > 0) {
+          var html = '<table border="1"><tr><th>Date</th><th>Event</th><th>Points</th></tr>';
+          data.rows.slice(0, 5).forEach(function(row) {
+            html += '<tr><td>' + (row.date || '') + '</td><td>' + (row.event || '') + '</td><td>' + (row.points || '') + '</td></tr>';
+          });
+          html += '</table>';
+          document.getElementById('history').innerHTML = html;
+        } else {
+          document.getElementById('history').textContent = 'No history found.';
+        }
+      })
+      .withFailureHandler(function(err) {
+        document.getElementById('points').textContent = 'Error loading data';
+        document.getElementById('history').textContent = 'Error: ' + err.message;
+      })
+      .getMyOverviewForEmail('` + (user.email || '') + `');
+  </script>
+</body>
+</html>
+  `).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 
 
 /* ========= Auth: Passwords + OTP ========= */
 function loginWithPassword(email, password){
   try{
+    console.log('🔐 loginWithPassword called for:', email);
     email = norm_(email);
-    if (!email || !password) return { ok:false, error:'Missing credentials' };
+    console.log('📧 Normalized email:', email);
+    
+    if (!email || !password) {
+      console.log('❌ Missing credentials');
+      return { ok:false, error:'Missing credentials' };
+    }
+    
     const row = getOrCreateDirRow_(email);
-    if (!row || !row.Email) return { ok:false, error:'Directory unavailable' };
-    if (!row.PassHash) return { ok:false, error:'No password set. Use "Create password" or code sign-in.' };
-    if (!verifyHash_(password, row.Salt, row.PassHash)) return { ok:false, error:'Incorrect password' };
+    console.log('📋 Directory row found:', row);
+    
+    if (!row || !row.Email) {
+      console.log('❌ Directory unavailable');
+      return { ok:false, error:'Directory unavailable' };
+    }
+    if (!row.PassHash) {
+      console.log('❌ No password set');
+      return { ok:false, error:'No password set. Use "Create password" or code sign-in.' };
+    }
+    if (!verifyHash_(password, row.Salt, row.PassHash)) {
+      console.log('❌ Incorrect password');
+      return { ok:false, error:'Incorrect password' };
+    }
+    
     markLogin_(email);
-    return { ok:true, email };
+    console.log('✅ Authentication successful');
+    
+    // After successful authentication
+    console.log('🎯 Calling getUserRole...');
+    const role = getUserRole(email);
+    console.log('🎭 Role from getUserRole:', role);
+    
+    console.log('📝 Calling createUserSession...');
+    const sessionId = createUserSession(email); // Create session
+    console.log('🆔 Session created:', sessionId);
+    
+    const employee = resolveEmployeeName(email);
+    console.log('👤 Employee name:', employee);
+    
+    const result = { 
+      ok: true, 
+      email: email,
+      role: role,
+      employee: employee,
+      sessionId: sessionId // Return session ID
+    };
+    
+    console.log('✅ loginWithPassword result:', result);
+    return result;
   }catch(e){
+    console.log('💥 loginWithPassword error:', e);
     return { ok:false, error:'Server error: ' + (e && e.message ? e.message : String(e)) };
   }
 }
@@ -375,7 +690,7 @@ function completeReset(email, code, newPass){
 
 /* ===== Invites (directors only) ===== */
 function sendInvite(email, employee, role){
-  email=norm_(email); if(!isDirector_(getCaller_())) return {ok:false,error:'Directors only'};
+  email=norm_(email); if(!isCallerDirector()) return {ok:false,error:'Directors only'};
   role = role||'Employee';
   const sh=dir_(); const map=readDirMap_(sh);
   if (!map[email]){
@@ -388,13 +703,41 @@ function sendInvite(email, employee, role){
   return {ok:true};
 }
 
+function isCallerDirector() {
+  const callerEmail = getCaller_();
+  return getUserRole(callerEmail) === 'director';
+}
+
+function getDirectorEmails() {
+  try {
+    const sh = dir_();
+    const map = readDirMap_(sh);
+    const directors = [];
+    
+    for (const email in map) {
+      const user = map[email];
+      if (user && String(user.Role).toLowerCase().trim() === 'director') {
+        directors.push(email);
+      }
+    }
+    
+    return directors;
+  } catch (e) {
+    Logger.log('getDirectorEmails error: ' + e);
+    return [];
+  }
+}
+
 /* ===== Self-claim request (optional) ===== */
 function requestAccess(email, employee){
   email=norm_(email); if(!email||!employee) return {ok:false,error:'Enter email & name'};
   const sh=req_(); if (sh.getLastRow()===0) sh.appendRow(REQ_COLS);
   sh.appendRow([now_(), email, employee, 'NEW']);
   // notify directors
-  try{ MailApp.sendEmail(AUTH.DIRECTORS.join(','), 'CLEAR access request', email+' requests access as '+employee); }catch(_){}
+  const directorEmails = getDirectorEmails();
+  if (directorEmails.length > 0) {
+    try{ MailApp.sendEmail(directorEmails.join(','), 'CLEAR access request', email+' requests access as '+employee); }catch(_){}
+  }
   return {ok:true};
 }
 
@@ -478,9 +821,6 @@ function makeHash_(password, salt){
 function verifyHash_(password, salt, hash){
   return makeHash_(password, salt) === String(hash || '');
 }
-function isDirector_(email){ return (AUTH.DIRECTORS||[]).map(norm_).indexOf(norm_(email))!==-1; }
-function getCaller_(){ return String(Session.getActiveUser().getEmail()||'').toLowerCase(); }
-function now_(){ const tz=Session.getScriptTimeZone()||'UTC'; return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm'); }
 function norm_(s){ return String(s||'').trim().toLowerCase(); }
 function firstIdx_(hdr, names){ for (var i=0;i<names.length;i++){ const k=hdr.indexOf(names[i]); if(k!==-1) return k; } return -1; }
 function fmtDate_(v,tz){ try{ if(v instanceof Date && !isNaN(v)) return Utilities.formatDate(v,tz,'yyyy-MM-dd'); const d=new Date(v); if(!isNaN(d)) return Utilities.formatDate(d,tz,'yyyy-MM-dd'); }catch(_){}
@@ -491,9 +831,264 @@ function fmtDate_(v,tz){ try{ if(v instanceof Date && !isNaN(v)) return Utilitie
 function adminInvite(email, employee, role){ return sendInvite(email, employee, role); }
 // Approve a pending self-claim row (set Verified=TRUE, set Employee/Role)
 function adminApprove(email, employee, role){
-  email=norm_(email); if(!isDirector_(getCaller_())) return {ok:false,error:'Directors only'};
+  email=norm_(email); if(!isCallerDirector()) return {ok:false,error:'Directors only'};
   const sh=dir_(); const map=readDirMap_(sh); const r=map[email]; if(!r) return {ok:false,error:'Not found'};
   writeDirFields_(sh, r._row, { Verified:true, Employee:employee||r.Employee, Role:role||r.Role, UpdatedAt:now_() });
   try{ MailApp.sendEmail(email,'Your CLEAR access is approved','You can sign in with your password or request a code.'); }catch(_){}
   return {ok:true};
+}
+
+function getUserRole(email) {
+  email = norm_(email);
+  console.log('🔍 getUserRole called for email:', email);
+  
+  // Only check Directory sheet roles
+  try {
+    const sh = dir_();
+    const map = readDirMap_(sh);
+    const user = map[email];
+    
+    console.log('📋 User from Directory:', user);
+    
+    if (user && user.Role) {
+      const rawRole = String(user.Role);
+      const role = rawRole.toLowerCase().trim();
+      console.log('🎭 Raw role from sheet:', rawRole, '| Normalized role:', role);
+      
+      if (role === 'director' || role === 'admin') {
+        console.log('✅ Returning director role');
+        return 'director';
+      }
+      if (role === 'lead' || role === 'supervisor') {
+        console.log('✅ Returning lead role');
+        return 'lead';
+      }
+      console.log('✅ Returning employee role (default)');
+    } else {
+      console.log('❌ No role found for user, using default employee');
+    }
+  } catch (e) {
+    console.log('❌ getUserRole error:', e);
+    Logger.log('getUserRole error: ' + e);
+  }
+  
+  return 'employee'; // default role
+}
+
+function getCaller_(){
+  return String(Session.getActiveUser().getEmail() || '').toLowerCase();
+}
+
+function getDirectorDashboardData() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const eventsSheet = ss.getSheetByName('Events');
+    
+    // Get pending milestones count
+    const pendingMilestones = getPendingMilestonesCount();
+    
+    // Get active probation count
+    const activeProbation = getActiveProbationCount();
+    
+    // Get grace requests
+    const graceRequests = getPendingGraceRequestsCount();
+    
+    // Get monthly events
+    const monthlyEvents = getMonthlyEventsCount();
+    
+    return {
+      pendingMilestones: pendingMilestones,
+      activeProbation: activeProbation,
+      graceRequests: graceRequests,
+      monthlyEvents: monthlyEvents
+    };
+  } catch (e) {
+    Logger.log('getDirectorDashboardData error: ' + e);
+    return { error: 'Failed to load dashboard data' };
+  }
+}
+
+function getPendingMilestones() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const eventsSheet = ss.getSheetByName('Events');
+    const data = eventsSheet.getDataRange().getValues();
+    const headers = data[0];
+    
+    // Find column indices
+    const employeeCol = headers.indexOf('Employee');
+    const milestoneCol = headers.indexOf('Milestone');
+    const pendingCol = headers.indexOf('Pending Status');
+    const directorCol = headers.indexOf('Consequence Director');
+    
+    const milestones = [];
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (row[milestoneCol] && 
+          String(row[pendingCol]).toLowerCase() === 'pending' && 
+          !row[directorCol]) {
+        milestones.push({
+          row: i + 1,
+          employee: row[employeeCol],
+          milestone: row[milestoneCol],
+          pendingStatus: row[pendingCol]
+        });
+      }
+    }
+    
+    return milestones;
+  } catch (e) {
+    Logger.log('getPendingMilestones error: ' + e);
+    return [];
+  }
+}
+
+function assignMilestoneDirector(row, directorName) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const eventsSheet = ss.getSheetByName('Events');
+    const headers = eventsSheet.getRange(1, 1, 1, eventsSheet.getLastColumn()).getValues()[0];
+    
+    const directorCol = headers.indexOf('Consequence Director');
+    if (directorCol === -1) {
+      throw new Error('Consequence Director column not found');
+    }
+    
+    eventsSheet.getRange(row, directorCol + 1).setValue(directorName);
+    
+    // Log the assignment
+    Logger.log('Assigned director ' + directorName + ' to milestone row ' + row);
+    
+    return { success: true };
+  } catch (e) {
+    Logger.log('assignMilestoneDirector error: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
+function getPendingMilestonesCount() {
+  return getPendingMilestones().length;
+}
+
+function getActiveProbationCount() {
+  // Implement based on your probation logic
+  return 0; // Placeholder
+}
+
+function getPendingGraceRequestsCount() {
+  // Implement based on your grace system
+  return 0; // Placeholder
+}
+
+function getMonthlyEventsCount() {
+  // Implement monthly event counting
+  return 0; // Placeholder
+}
+
+function createUserSession(email) {
+  const sessionId = Utilities.getUuid();
+  const userData = {
+    email: email,
+    role: getUserRole(email),
+    employee: resolveEmployeeName(email),
+    created: new Date().getTime()
+  };
+  
+  // Store in cache with 24-hour expiration
+  CacheService.getScriptCache().put(
+    'session:' + sessionId, 
+    JSON.stringify(userData), 
+    24 * 60 * 60 // 24 hours
+  );
+  
+  return sessionId;
+}
+
+function getUserFromSession(sessionId) {
+  try {
+    const cached = CacheService.getScriptCache().get('session:' + sessionId);
+    if (!cached) return null;
+    
+    return JSON.parse(cached);
+  } catch (e) {
+    return null;
+  }
+}
+
+// ---------- DEBUG FUNCTIONS ----------
+function debugUserDirectory(email) {
+  try {
+    console.log('🔍 DEBUG: Checking Directory for email:', email);
+    
+    email = norm_(email);
+    console.log('📧 Normalized email:', email);
+    
+    const sh = dir_();
+    if (!sh) {
+      console.log('❌ Directory sheet not found');
+      return { error: 'Directory sheet not found' };
+    }
+    
+    const map = readDirMap_(sh);
+    console.log('📋 Full Directory map keys:', Object.keys(map));
+    
+    const user = map[email];
+    console.log('👤 User data from Directory:', user);
+    
+    if (user) {
+      console.log('📝 User details:');
+      console.log('  - Email:', user.Email);
+      console.log('  - Employee:', user.Employee);
+      console.log('  - Role:', user.Role);
+      console.log('  - Verified:', user.Verified);
+      console.log('  - Row number:', user._row);
+      
+      // Test getUserRole
+      console.log('🎯 Testing getUserRole...');
+      const role = getUserRole(email);
+      console.log('🎭 getUserRole result:', role);
+      
+      return {
+        found: true,
+        email: user.Email,
+        employee: user.Employee,
+        role: user.Role,
+        verified: user.Verified,
+        row: user._row,
+        getUserRoleResult: role
+      };
+    } else {
+      console.log('❌ User not found in Directory');
+      
+      // Check if Directory has any data
+      const data = sh.getDataRange().getValues();
+      console.log('📊 Directory sheet has', data.length - 1, 'rows of data');
+      
+      if (data.length > 1) {
+        console.log('📋 First few Directory entries:');
+        for (let i = 1; i < Math.min(6, data.length); i++) {
+          console.log('  Row', i + 1, ':', data[i][0], '|', data[i][1], '|', data[i][2]);
+        }
+      }
+      
+      return { 
+        found: false, 
+        directorySize: data.length - 1,
+        sampleData: data.slice(1, Math.min(6, data.length)).map(row => ({
+          email: row[0],
+          employee: row[1], 
+          role: row[2]
+        }))
+      };
+    }
+  } catch (e) {
+    console.log('💥 debugUserDirectory error:', e);
+    return { error: e.toString() };
+  }
+}
+
+// Make this function available to the web app
+function testUserDirectory() {
+  const email = Session.getActiveUser().getEmail();
+  return debugUserDirectory(email);
 }
