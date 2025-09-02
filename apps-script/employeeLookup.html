@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta charset="utf-8" />
+    <title>Employee Lookup (select-only)</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 12px; }
+      h2 { margin: 0 0 12px 0; font-size: 18px; }
+      select, button { width: 100%; padding: 8px; margin: 6px 0; box-sizing: border-box; }
+      .row { display:flex; gap:8px; align-items:center; }
+      .row select { flex:1; }
+      .row button { width: 80px; }
+      .result { margin-top: 12px; padding: 10px; border: 1px solid #e0e0e0; border-radius: 6px; background:#fafafa; }
+      .muted { color:#666; font-size:12px; }
+      .label { font-weight:600; }
+      pre.diagnostic { background:#f4f6f8; padding:8px; border-radius:6px; overflow:auto; font-size:12px; }
+      .meta { font-size:12px; color:#555; margin-top:8px; }
+      .collapse { cursor:pointer; color:#0b66c3; text-decoration:underline; font-size:12px; }
+    </style>
+  </head>
+  <body>
+    <h2>Employee Lookup</h2>
+
+    <div class="row">
+      <select id="employeeSelect" aria-label="Employee select">
+        <option value="">— Select employee —</option>
+      </select>
+      <button id="refreshBtn" title="Refresh list">↻</button>
+    </div>
+
+    <button id="searchBtn" onclick="searchSelected()">Search</button>
+    <button id="pdfBtn" onclick="generateHistoryPdf()">Employee History PDF</button>
+    <div id="result" class="muted">Select a name and click Search.</div>
+    <div id="metaArea" class="meta" style="display:none;"></div>
+
+    <script>
+      /* --- Helpers --- */
+      function setResultHtml(html) { document.getElementById('result').innerHTML = html; }
+
+      // escaped JSON diagnostics in a collapsed toggle
+      function showMeta(envelope) {
+        try {
+          const meta = document.getElementById('metaArea');
+          if (!meta) return;
+          meta.innerHTML = ''; // clear
+
+          const toggle = document.createElement('span');
+          toggle.className = 'collapse';
+          toggle.textContent = 'Show diagnostics';
+
+          const block = document.createElement('div');
+          block.style.display = 'none';
+          block.style.marginTop = '8px';
+
+          const pre = document.createElement('pre');
+          pre.className = 'diagnostic';
+          pre.style.whiteSpace = 'pre-wrap';
+          // safe textContent avoids HTML injection
+          pre.textContent = JSON.stringify(envelope || {}, null, 2);
+
+          block.appendChild(pre);
+          meta.appendChild(toggle);
+          meta.appendChild(block);
+          meta.style.display = 'block';
+
+          toggle.addEventListener('click', function () {
+            if (block.style.display === 'none') {
+              block.style.display = 'block';
+              toggle.textContent = 'Hide diagnostics';
+            } else {
+              block.style.display = 'none';
+              toggle.textContent = 'Show diagnostics';
+            }
+          });
+        } catch (e) {
+          console.error('showMeta error', e);
+        }
+      }
+      function hideMeta() {
+        try {
+          const meta = document.getElementById('metaArea');
+          if (!meta) return;
+          meta.style.display = 'none';
+          meta.innerHTML = '';
+        } catch (e) {
+          console.error('hideMeta error', e);
+        }
+      }
+
+      // client wrapper to call the simplified server generator
+      function generateHistoryPdf() {
+        const sel = document.getElementById('employeeSelect');
+        const name = (sel && sel.value) ? sel.value.trim() : '';
+        if (!name) return setResultHtml('<div class="muted">Please select an employee.</div>');
+
+        const btn = document.getElementById('pdfBtn');
+        btn.disabled = true;
+        btn.textContent = 'Generating...';
+        setResultHtml('<em>Generating history PDF…</em>');
+        hideMeta();
+
+        google.script.run
+          .withSuccessHandler(function(res){
+            btn.disabled = false;
+            btn.textContent = 'Employee History PDF';
+            if (!res) { setResultHtml('<div class="muted">No response from server.</div>'); return; }
+            if (res.ok) {
+              try { window.open(res.pdfUrl, '_blank'); } catch(e) {}
+              setResultHtml('PDF created. <a href="' + escapeHtml(res.pdfUrl) + '" target="_blank">Open PDF</a>');
+              showMeta(res);
+            } else {
+              setResultHtml('<div class="muted">Error: ' + escapeHtml(res.error || 'Unknown') + '</div>');
+              showMeta(res);
+            }
+          })
+          .withFailureHandler(function(err){
+            btn.disabled = false;
+            btn.textContent = 'Employee History PDF';
+            setResultHtml('<div class="muted">Server error: ' + (err && err.message ? escapeHtml(err.message) : 'unknown') + '</div>');
+          })
+          .generateEmployeeHistoryPdf(name);
+      }
+
+
+      function escapeHtml(s) {
+        return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+      }
+
+      function formatDateYMD(dateInput) {
+        if (!dateInput && dateInput !== 0) return '';
+        if (dateInput instanceof Date) { if (isNaN(dateInput)) return ''; return dateInput.toISOString().slice(0,10); }
+        try { const d = new Date(dateInput); if (!isNaN(d)) return d.toISOString().slice(0,10); } catch(e){}
+        const s = String(dateInput || '');
+        return s.length >= 10 ? s.slice(0,10) : s;
+      }
+
+      function populateSelect(names) {
+        const sel = document.getElementById('employeeSelect');
+        const previous = sel.value;
+        sel.innerHTML = '<option value="">— Select employee —</option>';
+        (names || []).forEach(function(n) {
+          const opt = document.createElement('option');
+          opt.value = n;
+          opt.textContent = n;
+          sel.appendChild(opt);
+        });
+        if (previous && Array.from(sel.options).some(o => o.value === previous)) {
+          sel.value = previous;
+        }
+      }
+
+      /* --- Initialization --- */
+      (function init() {
+        console.log('[sidebar] EmployeeLookup (select) loaded', new Date().toISOString());
+        document.getElementById('refreshBtn').addEventListener('click', refreshList);
+        document.getElementById('employeeSelect').addEventListener('change', function() {
+          hideMeta();
+          setResultHtml('Select a name and click Search.');
+        });
+        // allow Enter key when select focused
+        document.getElementById('employeeSelect').addEventListener('keydown', function(e){
+          if (e.key === 'Enter') searchSelected();
+        });
+        // populate on load
+        refreshList();
+      })();
+
+      /* --- Server calls --- */
+      function refreshList() {
+        const refreshBtn = document.getElementById('refreshBtn');
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = 'Refreshing...';
+        google.script.run
+          .withSuccessHandler(function(names) {
+            populateSelect(names || []);
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = '↻';
+          })
+          .withFailureHandler(function(err) {
+            console.error('refreshList failed', err);
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = '↻';
+            setResultHtml('<div class="muted">Failed to refresh names: ' + (err && err.message ? escapeHtml(err.message) : 'unknown') + '</div>');
+          })
+          .getEmployeeList();
+      }
+
+      function searchSelected() {
+        const sel = document.getElementById('employeeSelect');
+        const name = (sel.value || '').trim();
+        if (!name) {
+          setResultHtml('<div class="muted">Please select an employee from the dropdown.</div>');
+          return;
+        }
+
+        const btn = document.getElementById('searchBtn');
+        btn.disabled = true;
+        btn.textContent = 'Searching...';
+        setResultHtml('<em>Searching…</em>');
+        hideMeta();
+
+        // call safe wrapper (server-side) that returns envelope.resultJson
+        google.script.run
+          .withSuccessHandler(function(envelope) {
+            console.log('[sidebar] clientLookupEmployeeSafe ->', envelope);
+            btn.disabled = false;
+            btn.textContent = 'Search';
+
+            if (!envelope) {
+              setResultHtml('<div class="muted">No response from server.</div>');
+              return;
+            }
+            if (envelope.ok === false && envelope.error) {
+              setResultHtml('<div class="muted">Server error: ' + escapeHtml(envelope.error) + '</div>');
+              return;
+            }
+
+            // parse server payload safely
+            let parsed = null;
+            if (envelope.resultJson) {
+              try { parsed = JSON.parse(envelope.resultJson); } catch (e) { parsed = { parseError: String(e), raw: envelope.resultJson }; }
+            } else if (envelope.result) {
+              parsed = envelope.result;
+            } else {
+              parsed = envelope;
+            }
+
+            // show toggleable diagnostics (collapsed)
+            showMeta({ scriptId: envelope.scriptId, ts: envelope.ts });
+
+            if (!parsed || parsed.error) {
+              setResultHtml('<div class="muted">' + escapeHtml(parsed && parsed.error ? parsed.error : 'No records found') + '</div>');
+              return;
+            }
+
+            renderEmployee(parsed);
+          })
+          .withFailureHandler(function(err) {
+            console.error('[sidebar] searchSelected failure', err);
+            btn.disabled = false;
+            btn.textContent = 'Search';
+            setResultHtml('<div class="muted">Search failed: ' + (err && err.message ? escapeHtml(err.message) : 'unknown') + '</div>');
+          })
+          .clientLookupEmployeeSafe(name);
+      }
+
+      /* --- Rendering --- */
+      function renderEmployee(data) {
+        const name = data.name || '';
+        const rollingTotal = (data.rollingTotal != null) ? data.rollingTotal : 'N/A';
+        const milestoneFull = data.milestone || '';
+        const probationEndsYMD = formatDateYMD(data.probationEnds || '');
+        const events = Array.isArray(data.recentEvents) ? data.recentEvents : [];
+
+        let html = '<div class="result">';
+        html += '<div><span class="label">Name:</span> ' + escapeHtml(name) + '</div>';
+        html += '<div><span class="label">Rolling Total:</span> ' + escapeHtml(String(rollingTotal)) + '</div>';
+        html += '<div><span class="label">Milestone:</span> ' + escapeHtml(milestoneFull) + '</div>';
+        html += '<div><span class="label">Probation Ends:</span> ' + escapeHtml(probationEndsYMD || 'N/A') + '</div>';
+        html += '<hr>';
+        html += '<div><span class="label">Recent Events:</span></div>';
+
+        if (!events.length) {
+          html += '<div class="muted">No recent events</div>';
+        } else {
+          html += '<ul>';
+          events.forEach(function(e) {
+            const dateStr = formatDateYMD(e.date);
+            if (e.isMilestone) {
+              const msFull = e.milestoneText || data.milestone || 'Milestone';
+              html += '<li>' + escapeHtml(dateStr) + ': ' + escapeHtml(msFull) + '</li>';
+            } else {
+              const inf = e.infraction || '';
+              const pts = (typeof e.points !== 'undefined' && e.points !== null) ? e.points : 0;
+              html += '<li>' + escapeHtml(dateStr) + ': ' + escapeHtml(inf) + ' (' + escapeHtml(String(pts)) + ' pts)</li>';
+            }
+          });
+          html += '</ul>';
+        }
+
+        html += '</div>';
+        setResultHtml(html);
+      }
+    </script>
+  </body>
+</html>
