@@ -348,7 +348,10 @@ function renderDirectorDashboard(user) {
       </script>
     </body>
     </html>
-  `).setTitle('CLEAR — Director Dashboard');
+  `)
+    .setTitle('CLEAR — Director Dashboard')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 
 // For directors
@@ -466,7 +469,10 @@ function renderLeadDashboard(user) {
       </script>
     </body>
     </html>
-  `).setTitle('CLEAR — Lead Dashboard');
+  `)
+    .setTitle('CLEAR — Lead Dashboard')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 
 function renderEmployeeDashboard(user) {
