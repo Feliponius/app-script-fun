@@ -145,7 +145,6 @@ function renderLoginPage() {
                 window.open(base + '?session=' + result.sessionId, '_top');
               })
               .closeAndReopenWithSession(result.sessionId);
-       main
           } else {
             showMsg(result.error || 'Login failed', 'error');
             btn.disabled = false;
