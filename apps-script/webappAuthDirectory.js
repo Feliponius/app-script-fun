@@ -138,9 +138,13 @@ function renderLoginPage() {
         .withSuccessHandler(function(result) {
           if (result.ok) {
             showMsg('Login successful! Redirecting...', 'success');
-            // Simple redirect that should work
             const base = window.location.href.split('?')[0];
-            window.location.href = base + '?session=' + result.sessionId;
+            google.script.run
+              .withSuccessHandler(() => {
+                google.script.host.close();
+                window.open(base + '?session=' + result.sessionId, '_top');
+              })
+              .closeAndReopenWithSession(result.sessionId);
           } else {
             showMsg(result.error || 'Login failed', 'error');
             btn.disabled = false;
