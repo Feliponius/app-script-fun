@@ -43,32 +43,52 @@ function getCaller_(){
 function doGet(e){
   try {
     console.log('🚀 doGet called with parameters:', e);
-    
-    const sessionId = e.parameter.session;
+
+    const params = (e && e.parameter) || {};
+    const page = params.page;
+    const sessionId = params.session;
     console.log('🎫 Session ID:', sessionId);
-    
+
     const user = sessionId ? getUserFromSession(sessionId) : null;
     console.log('👤 User from session:', user);
-    
-    if (!user) {
+
+    const pageMap = {
+      login: renderLoginPage,
+      director: () => renderDirectorDashboard(user, sessionId),
+      lead: () => renderLeadDashboard(user, sessionId),
+      employee: () => renderEmployeeDashboard(user, sessionId),
+      employeeSearch: () => renderEmployeeSearchPage(user, sessionId)
+    };
+
+    if (!user && page !== 'login') {
       console.log('❌ No user found, rendering login page');
       return renderLoginPage();
     }
-    
+
+    if (page && pageMap[page]) {
+      console.log('📄 Rendering page:', page);
+      return pageMap[page]();
+    }
+
+    if (!user) {
+      console.log('❌ No user after page check, rendering login');
+      return renderLoginPage();
+    }
+
     console.log('🎯 User role:', user.role);
-    
+
     // Route based on user role
     switch(user.role) {
       case 'director':
         console.log('🎬 Rendering director dashboard');
-        return renderDirectorDashboard(user);
+        return renderDirectorDashboard(user, sessionId);
       case 'lead':
         console.log('👥 Rendering lead dashboard');
-        return renderLeadDashboard(user);
+        return renderLeadDashboard(user, sessionId);
       case 'employee':
       default:
         console.log('👷 Rendering employee dashboard');
-        return renderEmployeeDashboard(user);
+        return renderEmployeeDashboard(user, sessionId);
     }
   } catch (error) {
     console.log('💥 Error in doGet:', error);
@@ -140,7 +160,7 @@ function renderLoginPage() {
             showMsg('Login successful! Redirecting...', 'success');
             // Simple redirect that should work
             const base = window.location.href.split('?')[0];
-            window.location.href = base + '?session=' + result.sessionId;
+            window.open(base + '?session=' + result.sessionId, '_top');
           } else {
             showMsg(result.error || 'Login failed', 'error');
             btn.disabled = false;
@@ -175,7 +195,7 @@ function closeAndReopenWithSession(sessionId) {
 }
 
 // Add this function to handle different dashboard types
-function renderDirectorDashboard(user) {
+function renderDirectorDashboard(user, sessionId) {
   return HtmlService.createHtmlOutput(`
     <!DOCTYPE html>
     <html>
@@ -232,9 +252,11 @@ function renderDirectorDashboard(user) {
       </div>
       
       <script>
+        const sessionId = ${JSON.stringify(sessionId)};
+
         // ---------- Helper Functions ----------
         function $(id) { return document.getElementById(id); }
-        
+
         // ---------- Event Listeners Setup ----------
         document.addEventListener('DOMContentLoaded', function() {
           console.log('🎯 DIRECTOR DASHBOARD LOADED');
@@ -253,7 +275,7 @@ function renderDirectorDashboard(user) {
         
         function logout() {
           console.log('Director logout clicked');
-          window.location.href = window.location.href.split('?')[0];
+          window.open('?page=login', '_top');
         }
         
         // ---------- Dashboard Functions ----------
@@ -321,8 +343,7 @@ function renderDirectorDashboard(user) {
         }
         
         function showEmployeeSearch() {
-          console.log('Showing employee search');
-          $('content-area').innerHTML = '<h3>Employee Search</h3><input type="text" id="searchInput" placeholder="Search employees..."><button onclick="searchEmployees()">Search</button><div id="searchResults"></div>';
+          window.open('?session=' + encodeURIComponent(sessionId) + '&page=employeeSearch', '_top');
         }
         
         function showPendingMilestones() {
@@ -355,7 +376,7 @@ function renderDirectorDashboard(user) {
 }
 
 // For directors
-function renderLeadDashboard(user) {
+function renderLeadDashboard(user, sessionId) {
   return HtmlService.createHtmlOutput(`
     <!DOCTYPE html>
     <html>
@@ -408,6 +429,8 @@ function renderLeadDashboard(user) {
       </div>
       
       <script>
+        const sessionId = ${JSON.stringify(sessionId)};
+
         // Load dashboard data
         google.script.run
           .withSuccessHandler(function(data) {
@@ -454,8 +477,7 @@ function renderLeadDashboard(user) {
         }
         
         function showEmployeeSearch() {
-          // Switch to employee search view
-          document.getElementById('content-area').innerHTML = '<h3>Employee Search</h3><input type="text" id="searchInput" placeholder="Search employees..."><button onclick="searchEmployees()">Search</button><div id="searchResults"></div>';
+          window.open('?session=' + encodeURIComponent(sessionId) + '&page=employeeSearch', '_top');
         }
         
         function showPendingMilestones() {
@@ -475,7 +497,7 @@ function renderLeadDashboard(user) {
     .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 
-function renderEmployeeDashboard(user) {
+function renderEmployeeDashboard(user, sessionId) {
   return HtmlService.createHtmlOutput(`
 <!DOCTYPE html>
 <html>
@@ -507,8 +529,9 @@ function renderEmployeeDashboard(user) {
   </div>
 
   <script>
+    const sessionId = ${JSON.stringify(sessionId)};
     function logout() {
-      window.location.href = window.location.href.split('?')[0];
+      window.open('?page=login', '_top');
     }
     
     // Load dashboard data
@@ -537,6 +560,13 @@ function renderEmployeeDashboard(user) {
 </body>
 </html>
   `).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+}
+
+function renderEmployeeSearchPage(user, sessionId) {
+  return HtmlService.createHtmlOutputFromFile('employeeLookup')
+    .setTitle('CLEAR — Employee Search')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 
