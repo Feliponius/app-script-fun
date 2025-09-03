@@ -138,10 +138,14 @@ function renderLoginPage() {
         .withSuccessHandler(function(result) {
           if (result.ok) {
             showMsg('Login successful! Redirecting...', 'success');
-            // Close the iframe and reload the web app with the session ID
             const base = window.location.href.split('?')[0];
-            google.script.host.close();
-            window.open(base + '?session=' + result.sessionId, '_top');
+            google.script.run
+              .withSuccessHandler(() => {
+                google.script.host.close();
+                window.open(base + '?session=' + result.sessionId, '_top');
+              })
+              .closeAndReopenWithSession(result.sessionId);
+       main
           } else {
             showMsg(result.error || 'Login failed', 'error');
             btn.disabled = false;
