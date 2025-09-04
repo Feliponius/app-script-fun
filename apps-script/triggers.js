@@ -94,8 +94,31 @@ function setup() {
 }
 
 /** Nice to have: keep triggers healthy whenever the spreadsheet opens */
-function onOpen() {
-  try { setup(); } catch (e) { try { Logger.log('onOpen/setup error: ' + e); } catch(_){} }
+function onOpen() { 
+  try { 
+    // Apply auto-hide functionality
+    applyEventsAutoHide_(); 
+    
+    // Set up main admin menu
+    showMenu(); 
+    
+    // Add backfill PDF menu (from utils.js)
+    if (typeof addAdminBackfillMenu_ === 'function') {
+      try { addAdminBackfillMenu_(); } catch(err) { 
+        logError && logError('addAdminBackfillMenu_onOpen', err); 
+      }
+    }
+    
+    // Ensure triggers are set up (from triggers.js) 
+    if (typeof setup === 'function') {
+      try { setup(); } catch(err) { 
+        Logger.log('onOpen/setup error: ' + err); 
+      }
+    }
+    
+  } catch(err) { 
+    logError && logError('applyEventsAutoHide_onOpen', err); 
+  }
 }
 
 /** Optional: inspect current triggers in Logs */

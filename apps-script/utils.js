@@ -857,10 +857,10 @@ function addAdminBackfillMenu_() {
 }
 
 // Call this from your existing onOpen() or add this standalone onOpen:
-function onOpen() {
-  try { addAdminBackfillMenu_(); } catch(_) {}
-  // if you already have an onOpen elsewhere, just call addAdminBackfillMenu_() in it
-}
+// function onOpen() {
+//   try { addAdminBackfillMenu_(); } catch(_) {}
+//   // if you already have an onOpen elsewhere, just call addAdminBackfillMenu_() in it
+// }
 
 /** === Queue storage === **/
 const _QKEY_ROWS   = 'pdf_q_rows_csv';   // comma-separated row numbers
