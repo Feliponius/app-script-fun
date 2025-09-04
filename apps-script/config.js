@@ -78,11 +78,7 @@ var CONFIG = {
     PositiveAction: 'PositiveAction',          // alias in addition to PositiveActionType
     LinkedEventID: 'Linked_Event_ID',          // common alias used in helpers
     WriteUpPDF: 'Write-Up PDF',                // some code uses WriteUpPDF
-    SignedPDFLink: 'Signed_PDF_Link',
-
-    // New appeal columns
-    AppealStatus: 'Appeal Status',
-    AppealExplanation: 'Appeal Explanation'
+    SignedPDFLink: 'Signed_PDF_Link'           // some code uses SignedPDFLink
   },
 
   // Director-only actions (not used by v2.1 but left for compatibility)
@@ -129,7 +125,13 @@ var CONFIG = {
     MILESTONE_15: '1M5ps3uCwUFcGNBfRqURPY2A7C5JmpS16YiNoKoBjVbA',
     POLICY_PROTECTED: '',
     PROBATION_FAILURE: '1ejCM7pVhzgal6STKECGop9QeRcuQ8bjzAP1y0QIk3jI',
-    EMP_HISTORY: '1aHEEchp3HDbuzlKEQ57iDr_F3L9Dm5PKG1qm6KceGs8'
+    EMP_HISTORY: '1aHEEchp3HDbuzlKEQ57iDr_F3L9Dm5PKG1qm6KceGs8',
+    PERF_ISSUE: '',
+    PERF_GA:'',
+    PERF_GA_SUCCESS:'',
+    PERF_INDEFINITE_REDUCTION:'',
+    PER_GREATER_REDUCTION:'',
+    PERF_TERMINATION:''
   },
 
   // Optional: map template token names to source keys (used by buildPdfDataFromRow_)

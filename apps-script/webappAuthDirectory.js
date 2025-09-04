@@ -39,1771 +39,1184 @@ function getCaller_(){
   return String(Session.getActiveUser().getEmail() || '').toLowerCase();
 }
 
-// ---------- MISSING UTILITY FUNCTIONS ----------
-
-// Add this after the existing utility functions (around line 40)
-function fmtDate_(dateValue, timezone) {
-  try {
-    if (!dateValue) return '';
-    
-    let date;
-    if (dateValue instanceof Date) {
-      date = dateValue;
-    } else if (typeof dateValue === 'string') {
-      date = new Date(dateValue);
-    } else if (typeof dateValue === 'number') {
-      date = new Date(dateValue);
-    } else {
-      return String(dateValue || '');
-    }
-    
-    // Format the date using the provided timezone
-    return Utilities.formatDate(date, timezone || 'UTC', 'yyyy-MM-dd HH:mm');
-  } catch (e) {
-    console.log('Error formatting date:', e);
-    return String(dateValue || '');
-  }
-}
-
 /* ========= UI ========= */
 function doGet(e){
-  try {
-    console.log('🚀 doGet called with parameters:', e);
-
-    const params = (e && e.parameter) || {};
-    const page = params.page;
-    const sessionId = params.session;
-    console.log('🎫 Session ID:', sessionId);
-
-    const user = sessionId ? getUserFromSession(sessionId) : null;
-    console.log('👤 User from session:', user);
-
-    const pageMap = {
-      login: renderLoginPage,
-      director: () => renderDirectorDashboard(user, sessionId),
-      lead: () => renderLeadDashboard(user, sessionId),
-      employee: () => renderEmployeeDashboard(user, sessionId),
-      employeeSearch: () => renderEmployeeSearchPage(user, sessionId)
-    };
-
-    if (!user && page !== 'login') {
-      console.log('❌ No user found, rendering login page');
-      return renderLoginPage();
-    }
-
-    if (page && pageMap[page]) {
-      console.log('📄 Rendering page:', page);
-      return pageMap[page]();
-    }
-
-    if (!user) {
-      console.log('❌ No user after page check, rendering login');
-      return renderLoginPage();
-    }
-
-    console.log('🎯 User role:', user.role);
-
-    // Route based on user role
-    switch(user.role) {
-      case 'director':
-        console.log('🎬 Rendering director dashboard');
-        return renderDirectorDashboard(user, sessionId);
-      case 'lead':
-        console.log('👥 Rendering lead dashboard');
-        return renderLeadDashboard(user, sessionId);
-      case 'employee':
-      default:
-        console.log('👷 Rendering employee dashboard');
-        return renderEmployeeDashboard(user, sessionId);
-    }
-  } catch (error) {
-    console.log('💥 Error in doGet:', error);
-    return HtmlService.createHtmlOutput('<h1>Error</h1><p>' + error + '</p>');
-  }
-}
-
-function renderLoginPage() {
+  // Single-page shell: client handles all routing via google.script.history
   return HtmlService.createHtmlOutput(`
 <!DOCTYPE html>
 <html>
 <head>
-  <title>CLEAR — Authentication</title>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CLEAR - Performance Management Portal</title>
   <style>
+    /* === CLEAR Design System === */
+    :root {
+      --cfa-red: #D73527;
+      --cfa-red-dark: #B02A1F;
+      --cfa-blue: #1E3A8A;
+      --cfa-blue-light: #3B82F6;
+      --cfa-gray-50: #F9FAFB;
+      --cfa-gray-100: #F3F4F6;
+      --cfa-gray-200: #E5E7EB;
+      --cfa-gray-300: #D1D5DB;
+      --cfa-gray-400: #9CA3AF;
+      --cfa-gray-500: #6B7280;
+      --cfa-gray-600: #4B5563;
+      --cfa-gray-700: #374151;
+      --cfa-gray-800: #1F2937;
+      --cfa-gray-900: #111827;
+      --success: #10B981;
+      --warning: #F59E0B;
+      --error: #EF4444;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+      --radius: 8px;
+      --radius-lg: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    
     body { 
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       margin: 0; 
-      padding: 20px; 
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      background: var(--cfa-gray-50);
+      color: var(--cfa-gray-800);
+      line-height: 1.6;
     }
-    
-    .auth-container { 
-      background: white; 
-      border-radius: 12px; 
-      box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
-      width: 100%; 
-      max-width: 450px; 
-      overflow: hidden;
-    }
-    
-    .auth-header {
-      background: #2c3e50;
-      color: white;
-      padding: 30px 40px;
-      text-align: center;
-    }
-    
-    .auth-header h1 {
-      margin: 0;
-      font-size: 28px;
-      font-weight: 300;
-    }
-    
-    .auth-tabs {
-      display: flex;
-      background: #f8f9fa;
-      border-bottom: 1px solid #dee2e6;
-    }
-    
-    .auth-tab {
-      flex: 1;
-      padding: 15px;
-      text-align: center;
-      cursor: pointer;
-      border: none;
-      background: transparent;
-      font-size: 14px;
-      font-weight: 500;
-      color: #6c757d;
-      transition: all 0.3s ease;
-    }
-    
-    .auth-tab.active {
-      background: white;
-      color: #007bff;
-      border-bottom: 3px solid #007bff;
-    }
-    
-    .auth-tab:hover {
-      background: #e9ecef;
-      color: #007bff;
-    }
-    
-    .auth-content {
-      padding: 40px;
-    }
-    
-    .form-group { 
-      margin: 20px 0; 
-    }
-    
-    .form-group label { 
-      display: block; 
-      margin-bottom: 8px; 
-      font-weight: 500;
-      color: #495057;
-    }
-    
-    .form-group input { 
-      width: 100%; 
-      padding: 12px 16px; 
-      border: 2px solid #e9ecef; 
-      border-radius: 8px; 
-      font-size: 16px;
-      transition: border-color 0.3s ease;
-      box-sizing: border-box;
-    }
-    
-    .form-group input:focus {
-      outline: none;
-      border-color: #007bff;
-      box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
-    }
-    
-    .btn { 
-      width: 100%; 
-      padding: 14px; 
-      border: none; 
-      border-radius: 8px; 
-      font-size: 16px;
-      font-weight: 500;
-      cursor: pointer; 
-      transition: all 0.3s ease;
-      margin-top: 10px;
-    }
-    
-    .btn-primary { 
-      background: #007bff; 
-      color: white; 
-    }
-    
-    .btn-primary:hover { 
-      background: #0056b3; 
-      transform: translateY(-1px);
-    }
-    
-    .btn-secondary { 
-      background: #6c757d; 
-      color: white; 
-    }
-    
-    .btn-secondary:hover { 
-      background: #545b62; 
-    }
-    
-    .btn:disabled { 
-      background: #ccc; 
-      cursor: not-allowed; 
-      transform: none;
-    }
-    
-    .msg { 
-      margin: 15px 0; 
-      padding: 12px 16px; 
-      border-radius: 8px; 
-      font-size: 14px;
-      display: none;
-    }
-    
-    .msg.error { 
-      background: #f8d7da; 
-      color: #721c24; 
-      border: 1px solid #f5c6cb; 
-      display: block;
-    }
-    
-    .msg.success { 
-      background: #d4edda; 
-      color: #155724; 
-      border: 1px solid #c3e6cb; 
-      display: block;
-    }
-    
-    .auth-footer {
-      text-align: center;
-      padding: 20px 40px;
-      background: #f8f9fa;
-      border-top: 1px solid #dee2e6;
-      font-size: 14px;
-      color: #6c757d;
-    }
-    
-    .switch-link {
-      color: #007bff;
-      cursor: pointer;
-      text-decoration: underline;
-    }
-    
-    .switch-link:hover {
-      color: #0056b3;
-    }
-    
-    .tab-content {
-      display: none;
-    }
-    
-    .tab-content.active {
-      display: block;
-    }
-    
-    .code-input {
-      text-align: center;
-      font-family: 'Courier New', monospace;
-      font-size: 24px;
-      letter-spacing: 8px;
-    }
-  </style>
-</head>
-<body>
-  <div class="auth-container">
-    <div class="auth-header">
-      <h1>CLEAR</h1>
-      <p>Standards Management System</p>
-    </div>
-    
-    <div class="auth-tabs">
-      <button class="auth-tab active" onclick="showTab('signin')">Sign In</button>
-      <button class="auth-tab" onclick="showTab('code')">Sign In Code</button>
-      <button class="auth-tab" onclick="showTab('create')">Create Account</button>
-      <button class="auth-tab" onclick="showTab('reset')">Reset Password</button>
-    </div>
-    
-    <div class="auth-content">
-      
-      <!-- SIGN IN TAB -->
-      <div id="signin" class="tab-content active">
-        <div class="form-group">
-          <label for="signin-email">Email:</label>
-          <input type="email" id="signin-email" required>
-        </div>
-        
-        <div class="form-group">
-          <label for="signin-password">Password:</label>
-          <input type="password" id="signin-password" required>
-        </div>
-        
-        <button id="signinBtn" class="btn btn-primary" onclick="login()">Sign In</button>
-        
-        <div id="signin-msg" class="msg"></div>
-      </div>
-      
-      <!-- SIGN IN CODE TAB -->
-      <div id="code" class="tab-content">
-        <p style="text-align: center; color: #6c757d; margin-bottom: 20px;">
-          Enter your email to receive a sign-in code
-        </p>
-        
-        <div class="form-group">
-          <label for="code-email">Email:</label>
-          <input type="email" id="code-email" required>
-        </div>
-        
-        <div class="form-group" id="code-input-group" style="display: none;">
-          <label for="code-code">Enter 6-digit code:</label>
-          <input type="text" id="code-code" class="code-input" maxlength="6" pattern="[0-9]{6}" placeholder="000000">
-        </div>
-        
-        <button id="codeBtn" class="btn btn-primary" onclick="requestSigninCode()">Send Code</button>
-        <button id="codeVerifyBtn" class="btn btn-primary" onclick="verifySigninCode()" style="display: none;">Verify & Sign In</button>
-        
-        <div id="code-msg" class="msg"></div>
-      </div>
-      
-      <!-- CREATE ACCOUNT TAB -->
-      <div id="create" class="tab-content">
-        <p style="text-align: center; color: #6c757d; margin-bottom: 20px;">
-          Create a new account - you'll receive an email verification code
-        </p>
-        
-        <div class="form-group">
-          <label for="create-email">Email:</label>
-          <input type="email" id="create-email" required>
-        </div>
-        
-        <div class="form-group">
-          <label for="create-name">Full Name:</label>
-          <input type="text" id="create-name" required>
-        </div>
-        
-        <div class="form-group" id="create-code-group" style="display: none;">
-          <label for="create-code">Enter 6-digit verification code:</label>
-          <input type="text" id="create-code" class="code-input" maxlength="6" pattern="[0-9]{6}" placeholder="000000">
-        </div>
-        
-        <div class="form-group" id="create-password-group" style="display: none;">
-          <label for="create-password">Create Password (min 8 characters):</label>
-          <input type="password" id="create-password" minlength="8" required>
-        </div>
-        
-        <button id="createBtn" class="btn btn-primary" onclick="requestCreateCode()">Send Verification Code</button>
-        <button id="createVerifyBtn" class="btn btn-primary" onclick="verifyCreateAccount()" style="display: none;">Create Account</button>
-        
-        <div id="create-msg" class="msg"></div>
-      </div>
-      
-      <!-- RESET PASSWORD TAB -->
-      <div id="reset" class="tab-content">
-        <p style="text-align: center; color: #6c757d; margin-bottom: 20px;">
-          Reset your password - you'll receive an email verification code
-        </p>
-        
-        <div class="form-group">
-          <label for="reset-email">Email:</label>
-          <input type="email" id="reset-email" required>
-        </div>
-        
-        <div class="form-group" id="reset-code-group" style="display: none;">
-          <label for="reset-code">Enter 6-digit verification code:</label>
-          <input type="text" id="reset-code" class="code-input" maxlength="6" pattern="[0-9]{6}" placeholder="000000">
-        </div>
-        
-        <div class="form-group" id="reset-password-group" style="display: none;">
-          <label for="reset-password">New Password (min 8 characters):</label>
-          <input type="password" id="reset-password" minlength="8" required>
-        </div>
-        
-        <button id="resetBtn" class="btn btn-primary" onclick="requestResetCode()">Send Reset Code</button>
-        <button id="resetVerifyBtn" class="btn btn-primary" onclick="verifyResetPassword()" style="display: none;">Reset Password</button>
-        
-        <div id="reset-msg" class="msg"></div>
-      </div>
-      
-    </div>
-    
-    <div class="auth-footer">
-      Need help? Contact your system administrator
-    </div>
-  </div>
 
-  <script>
-    function $(id) { return document.getElementById(id); }
-    
-    function showTab(tabName) {
-      // Hide all tab contents
-      const tabs = document.querySelectorAll('.tab-content');
-      tabs.forEach(tab => tab.classList.remove('active'));
-      
-      // Remove active class from all tab buttons
-      const tabButtons = document.querySelectorAll('.auth-tab');
-      tabButtons.forEach(btn => btn.classList.remove('active'));
-      
-      // Show selected tab
-      $(tabName).classList.add('active');
-      event.target.classList.add('active');
-      
-      // Clear any messages
-      const msgs = document.querySelectorAll('.msg');
-      msgs.forEach(msg => {
-        msg.style.display = 'none';
-        msg.className = 'msg';
-      });
+    /* === Loading States === */
+    .loading-spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--cfa-gray-300);
+      border-radius: 50%;
+      border-top-color: var(--cfa-red);
+      animation: spin 1s ease-in-out infinite;
     }
-    
-    function showMsg(elementId, text, type) {
-      const msgDiv = $(elementId);
-      msgDiv.textContent = text;
-      msgDiv.className = 'msg ' + (type || 'error');
-    }
-    
-    // SIGN IN FUNCTIONS
-    function login() {
-      const email = $('signin-email').value;
-      const password = $('signin-password').value;
-      
-      if (!email || !password) {
-        showMsg('signin-msg', 'Please enter email and password', 'error');
-        return;
-      }
-      
-      const btn = $('signinBtn');
-      btn.disabled = true;
-      btn.textContent = 'Signing in...';
-      
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result.ok) {
-            showMsg('Login successful! Redirecting...', 'success');
-            const base = window.location.href.split('?')[0];
-            google.script.run
-              .withSuccessHandler(() => {
-                google.script.host.close();
-                window.open(base + '?session=' + result.sessionId, '_top');
-              })
-              .closeAndReopenWithSession(result.sessionId);
-          } else {
-            showMsg('signin-msg', result.error || 'Login failed', 'error');
-            btn.disabled = false;
-            btn.textContent = 'Sign In';
-          }
-        })
-        .withFailureHandler(function(error) {
-          showMsg('signin-msg', 'Login error: ' + (error.message || 'Unknown error'), 'error');
-          btn.disabled = false;
-          btn.textContent = 'Sign In';
-        })
-        .loginWithPassword(email, password);
-    }
-    
-    // SIGN IN CODE FUNCTIONS
-    function requestSigninCode() {
-      const email = $('code-email').value;
-      
-      if (!email) {
-        showMsg('code-msg', 'Please enter your email', 'error');
-        return;
-      }
-      
-      const btn = $('codeBtn');
-      btn.disabled = true;
-      btn.textContent = 'Sending...';
-      
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result.ok) {
-            showMsg('code-msg', 'Code sent! Check your email.', 'success');
-            $('code-input-group').style.display = 'block';
-            $('codeVerifyBtn').style.display = 'block';
-            btn.style.display = 'none';
-          } else {
-            showMsg('code-msg', result.error || 'Failed to send code', 'error');
-            btn.disabled = false;
-            btn.textContent = 'Send Code';
-          }
-        })
-        .withFailureHandler(function(error) {
-          showMsg('code-msg', 'Error: ' + (error.message || 'Unknown error'), 'error');
-          btn.disabled = false;
-          btn.textContent = 'Send Code';
-        })
-        .requestSigninCode(email);
-    }
-    
-    function verifySigninCode() {
-      const email = $('code-email').value;
-      const code = $('code-code').value;
-      
-      if (!email || !code) {
-        showMsg('code-msg', 'Please enter email and code', 'error');
-        return;
-      }
-      
-      if (code.length !== 6 || !/^\d{6}$/.test(code)) {
-        showMsg('code-msg', 'Please enter a valid 6-digit code', 'error');
-        return;
-      }
-      
-      const btn = $('codeVerifyBtn');
-      btn.disabled = true;
-      btn.textContent = 'Verifying...';
-      
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result.ok) {
-            showMsg('code-msg', 'Code verified! Loading dashboard...', 'success');
-            console.log('🔑 Code login successful, sessionId:', result.sessionId);
-            
-            setTimeout(function() {
-              loadDashboardAfterLogin(result.sessionId);
-            }, 500);
-            
-          } else {
-            showMsg('code-msg', result.error || 'Invalid code', 'error');
-            btn.disabled = false;
-            btn.textContent = 'Verify & Sign In';
-          }
-        })
-        .withFailureHandler(function(error) {
-          showMsg('code-msg', 'Error: ' + (error.message || 'Unknown error'), 'error');
-          btn.disabled = false;
-          btn.textContent = 'Verify & Sign In';
-        })
-        .completeSigninCode(email, code);
-    }
-    
-    // CREATE ACCOUNT FUNCTIONS
-    function requestCreateCode() {
-      const email = $('create-email').value;
-      const name = $('create-name').value;
-      
-      if (!email || !name) {
-        showMsg('create-msg', 'Please enter email and name', 'error');
-        return;
-      }
-      
-      const btn = $('createBtn');
-      btn.disabled = true;
-      btn.textContent = 'Sending...';
-      
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result.ok) {
-            showMsg('create-msg', 'Verification code sent! Check your email.', 'success');
-            $('create-code-group').style.display = 'block';
-            $('create-password-group').style.display = 'block';
-            $('createVerifyBtn').style.display = 'block';
-            btn.style.display = 'none';
-          } else {
-            showMsg('create-msg', result.error || 'Failed to send code', 'error');
-            btn.disabled = false;
-            btn.textContent = 'Send Verification Code';
-          }
-        })
-        .withFailureHandler(function(error) {
-          showMsg('create-msg', 'Error: ' + (error.message || 'Unknown error'), 'error');
-          btn.disabled = false;
-          btn.textContent = 'Send Verification Code';
-        })
-        .requestCreateCode(email, name);
-    }
-    
-    function verifyCreateAccount() {
-      const email = $('create-email').value;
-      const code = $('create-code').value;
-      const password = $('create-password').value;
-      
-      if (!email || !code || !password) {
-        showMsg('create-msg', 'Please fill in all fields', 'error');
-        return;
-      }
-      
-      if (password.length < 8) {
-        showMsg('create-msg', 'Password must be at least 8 characters', 'error');
-        return;
-      }
-      
-      const btn = $('createVerifyBtn');
-      btn.disabled = true;
-      btn.textContent = 'Creating...';
-      
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result.ok) {
-            showMsg('create-msg', 'Account created successfully! You can now sign in.', 'success');
-            setTimeout(function() {
-              showTab('signin');
-            }, 2000);
-          } else {
-            showMsg('create-msg', result.error || 'Failed to create account', 'error');
-            btn.disabled = false;
-            btn.textContent = 'Create Account';
-          }
-        })
-        .withFailureHandler(function(error) {
-          showMsg('create-msg', 'Error: ' + (error.message || 'Unknown error'), 'error');
-          btn.disabled = false;
-          btn.textContent = 'Create Account';
-        })
-        .completeCreate(email, code, password);
-    }
-    
-    // RESET PASSWORD FUNCTIONS
-    function requestResetCode() {
-      const email = $('reset-email').value;
-      
-      if (!email) {
-        showMsg('reset-msg', 'Please enter your email', 'error');
-        return;
-      }
-      
-      const btn = $('resetBtn');
-      btn.disabled = true;
-      btn.textContent = 'Sending...';
-      
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result.ok) {
-            showMsg('reset-msg', 'Reset code sent! Check your email.', 'success');
-            $('reset-code-group').style.display = 'block';
-            $('reset-password-group').style.display = 'block';
-            $('resetVerifyBtn').style.display = 'block';
-            btn.style.display = 'none';
-          } else {
-            showMsg('reset-msg', result.error || 'Failed to send reset code', 'error');
-            btn.disabled = false;
-            btn.textContent = 'Send Reset Code';
-          }
-        })
-        .withFailureHandler(function(error) {
-          showMsg('reset-msg', 'Error: ' + (error.message || 'Unknown error'), 'error');
-          btn.disabled = false;
-          btn.textContent = 'Send Reset Code';
-        })
-        .requestResetCode(email);
-    }
-    
-    function verifyResetPassword() {
-      const email = $('reset-email').value;
-      const code = $('reset-code').value;
-      const password = $('reset-password').value;
-      
-      if (!email || !code || !password) {
-        showMsg('reset-msg', 'Please fill in all fields', 'error');
-        return;
-      }
-      
-      if (password.length < 8) {
-        showMsg('reset-msg', 'Password must be at least 8 characters', 'error');
-        return;
-      }
-      
-      const btn = $('resetVerifyBtn');
-      btn.disabled = true;
-      btn.textContent = 'Resetting...';
-      
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result.ok) {
-            showMsg('reset-msg', 'Password reset successfully! You can now sign in with your new password.', 'success');
-            setTimeout(function() {
-              showTab('signin');
-            }, 2000);
-          } else {
-            showMsg('reset-msg', result.error || 'Failed to reset password', 'error');
-            btn.disabled = false;
-            btn.textContent = 'Reset Password';
-          }
-        })
-        .withFailureHandler(function(error) {
-          showMsg('reset-msg', 'Error: ' + (error.message || 'Unknown error'), 'error');
-          btn.disabled = false;
-          btn.textContent = 'Reset Password';
-        })
-        .completeReset(email, code, password);
-    }
-    
-    function loadDashboardAfterLogin(sessionId) {
-      try {
-        console.log('📊 Loading dashboard for session:', sessionId);
-        
-        // Call server-side function to get dashboard content
-        google.script.run
-          .withSuccessHandler(function(dashboardHtml) {
-            console.log('✅ Dashboard HTML received, updating page...');
-            // Replace the entire page content with the dashboard
-            document.open();
-            document.write(dashboardHtml);
-            document.close();
-          })
-          .withFailureHandler(function(error) {
-            console.error('❌ Failed to load dashboard:', error);
-            alert('Failed to load dashboard: ' + error.message);
-          })
-          .getDashboardHtml(sessionId);
-      } catch (e) {
-        console.error('💥 Error loading dashboard:', e);
-      }
-    }
-  </script>
-</body>
-</html>
-  `).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .setSandboxMode(HtmlService.SandboxMode.NATIVE);
-}
 
-function closeAndReopenWithSession(sessionId) {
-  // This function doesn't need to do anything - it's just called to ensure
-  // the google.script.run pipeline is properly closed before we close the host
-  console.log('📤 closeAndReopenWithSession called with:', sessionId);
-  return true;
-}
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
 
-// Add this function to handle different dashboard types
-function renderDirectorDashboard(user, sessionId) {
-  return HtmlService.createHtmlOutput(`
-<!DOCTYPE html>
-<html>
-<head>
-  <title>CLEAR — Director Dashboard</title>
-  <meta charset="UTF-8">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      color: #333;
-    }
-    
-    .dashboard-container {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-    
-    .dashboard-header {
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(10px);
-      border-radius: 16px;
-      padding: 30px;
-      margin-bottom: 30px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    
-    .header-left h1 {
-      font-size: 32px;
-      font-weight: 700;
-      color: #2c3e50;
-      margin-bottom: 4px;
-    }
-    
-    .header-subtitle {
-      color: #6c757d;
-      font-size: 16px;
-      font-weight: 400;
-    }
-    
-    .header-right {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-    }
-    
-    .user-info {
-      text-align: right;
-    }
-    
-    .user-name {
-      font-weight: 600;
-      color: #2c3e50;
-      font-size: 18px;
-    }
-    
-    .user-role {
-      color: #007bff;
-      font-size: 14px;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    
-    .logout-btn {
-      background: linear-gradient(135deg, #dc3545, #c82333);
-      color: white;
-      border: none;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-weight: 500;
-      font-size: 14px;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
-    }
-    
-    .logout-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
-    }
-    
-    .dashboard-nav {
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(10px);
-      border-radius: 16px;
-      padding: 0;
-      margin-bottom: 30px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-      overflow: hidden;
-    }
-    
-    .nav-tabs {
-      display: flex;
-      list-style: none;
-    }
-    
-    .nav-tab {
-      flex: 1;
-      text-align: center;
-    }
-    
-    .nav-tab button {
-      width: 100%;
-      padding: 20px 16px;
-      background: transparent;
-      border: none;
-      font-size: 16px;
-      font-weight: 500;
-      color: #6c757d;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      position: relative;
-    }
-    
-    .nav-tab button:hover {
-      background: rgba(0, 123, 255, 0.05);
-      color: #007bff;
-    }
-    
-    .nav-tab.active button {
-      background: white;
-      color: #007bff;
-      font-weight: 600;
-    }
-    
-    .nav-tab.active button::after {
-      content: '';
-      position: absolute;
-      bottom: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 40px;
-      height: 3px;
-      background: #007bff;
-      border-radius: 2px;
-    }
-    
-    .dashboard-content {
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(10px);
-      border-radius: 16px;
-      padding: 30px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-      min-height: 600px;
-    }
-    
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 24px;
-      margin-bottom: 40px;
-    }
-    
-    .stat-card {
-      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-      border-radius: 12px;
-      padding: 24px;
-      text-align: center;
-      transition: all 0.3s ease;
-      border: 1px solid rgba(0,0,0,0.05);
-      position: relative;
-      overflow: hidden;
-    }
-    
-    .stat-card::before {
-      content: '';
-      position: absolute;
+    .loading-overlay {
+      position: fixed;
       top: 0;
       left: 0;
       right: 0;
-      height: 4px;
-      background: linear-gradient(90deg, #007bff, #28a745, #ffc107, #dc3545);
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
     }
-    
-    .stat-card:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+
+    /* === Login Screen === */
+    .login-container {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, var(--cfa-gray-50) 0%, var(--cfa-gray-100) 100%);
     }
-    
-    .stat-icon {
-      width: 48px;
-      height: 48px;
+
+    .login-card {
+      background: white;
+      padding: 3rem;
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+    }
+
+    .login-logo {
+      width: 80px;
+      height: 80px;
+      background: var(--cfa-red);
+      border-radius: 50%;
+      margin: 0 auto 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 2rem;
+      font-weight: bold;
+    }
+
+    .login-title {
+      font-size: 1.875rem;
+      font-weight: 700;
+      color: var(--cfa-gray-900);
+      margin-bottom: 0.5rem;
+    }
+
+    .login-subtitle {
+      color: var(--cfa-gray-600);
+      margin-bottom: 2rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+      text-align: left;
+    }
+
+    .form-label {
+      display: block;
+      font-weight: 600;
+      color: var(--cfa-gray-700);
+      margin-bottom: 0.5rem;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 2px solid var(--cfa-gray-200);
+      border-radius: var(--radius);
+      font-size: 1rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--cfa-blue);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      min-height: 44px;
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: var(--cfa-red);
+      color: white;
+      width: 100%;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--cfa-red-dark);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .btn-secondary {
+      background: var(--cfa-gray-200);
+      color: var(--cfa-gray-700);
+    }
+
+    .btn-secondary:hover {
+      background: var(--cfa-gray-300);
+    }
+
+    .btn-danger {
+      background: var(--error);
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #DC2626;
+    }
+
+    /* === Dashboard Layout === */
+    .dashboard {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      background: white;
+      border-bottom: 1px solid var(--cfa-gray-200);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-logo {
+      width: 32px;
+      height: 32px;
+      background: var(--cfa-red);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 0.875rem;
+    }
+
+    .brand-text {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--cfa-gray-900);
+    }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--cfa-gray-600);
+      font-size: 0.875rem;
+    }
+
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      background: var(--cfa-gray-300);
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin: 0 auto 16px;
-      font-size: 24px;
-    }
-    
-    .stat-icon.pending { background: linear-gradient(135deg, #ffc107, #fd7e14); color: white; }
-    .stat-icon.probation { background: linear-gradient(135deg, #dc3545, #c82333); color: white; }
-    .stat-icon.grace { background: linear-gradient(135deg, #28a745, #20c997); color: white; }
-    .stat-icon.events { background: linear-gradient(135deg, #007bff, #6610f2); color: white; }
-    
-    .stat-title {
-      font-size: 18px;
       font-weight: 600;
-      color: #495057;
-      margin-bottom: 8px;
+      color: var(--cfa-gray-700);
     }
-    
-    .stat-number {
-      font-size: 36px;
+
+    /* === Main Content === */
+    .main-content {
+      flex: 1;
+      padding: 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .page-header {
+      margin-bottom: 2rem;
+    }
+
+    .page-title {
+      font-size: 2rem;
       font-weight: 700;
-      color: #2c3e50;
-      margin-bottom: 4px;
+      color: var(--cfa-gray-900);
+      margin-bottom: 0.5rem;
     }
-    
-    .stat-change {
-      font-size: 14px;
-      color: #6c757d;
-      font-weight: 500;
+
+    .page-subtitle {
+      color: var(--cfa-gray-600);
+      font-size: 1.125rem;
     }
-    
-    .content-section {
-      margin-bottom: 40px;
+
+    /* === Cards === */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
     }
-    
-    .section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
+
+    .card {
+      background: white;
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--cfa-gray-200);
+      transition: all 0.2s;
     }
-    
-    .section-title {
-      font-size: 24px;
-      font-weight: 600;
-      color: #2c3e50;
-    }
-    
-    .section-actions {
-      display: flex;
-      gap: 12px;
-    }
-    
-    .btn-secondary {
-      background: #6c757d;
-      color: white;
-      border: none;
-      padding: 10px 20px;
-      border-radius: 8px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.3s ease;
-    }
-    
-    .btn-secondary:hover {
-      background: #5a6268;
-      transform: translateY(-1px);
-    }
-    
-    .milestone-card {
-      background: #fff;
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 16px;
-      border-left: 4px solid #ffc107;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      transition: all 0.3s ease;
-    }
-    
-    .milestone-card:hover {
-      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+
+    .card:hover {
+      box-shadow: var(--shadow-md);
       transform: translateY(-2px);
     }
-    
-    .milestone-header {
+
+    .card-header {
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
+      align-items: flex-start;
+      margin-bottom: 1rem;
     }
-    
-    .milestone-employee {
+
+    .card-title {
+      font-size: 0.875rem;
       font-weight: 600;
-      color: #2c3e50;
-      font-size: 16px;
-    }
-    
-    .milestone-status {
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 500;
+      color: var(--cfa-gray-600);
       text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
-    
-    .status-pending { background: #fff3cd; color: #856404; }
-    .status-assigned { background: #d1ecf1; color: #0c5460; }
-    
-    .milestone-title {
-      color: #495057;
-      margin-bottom: 12px;
-      font-size: 15px;
-    }
-    
-    .milestone-actions {
-      display: flex;
-      gap: 8px;
-    }
-    
-    .btn-small {
-      padding: 6px 12px;
-      font-size: 13px;
-      border-radius: 6px;
-      border: none;
-      cursor: pointer;
-      font-weight: 500;
-      transition: all 0.3s ease;
-    }
-    
-    .btn-assign {
-      background: #007bff;
-      color: white;
-    }
-    
-    .btn-assign:hover {
-      background: #0056b3;
-    }
-    
-    .btn-view {
-      background: #28a745;
-      color: white;
-    }
-    
-    .btn-view:hover {
-      background: #1e7e34;
-    }
-    
-    .empty-state {
-      text-align: center;
-      padding: 60px 20px;
-      color: #6c757d;
-    }
-    
-    .empty-state-icon {
-      font-size: 48px;
-      margin-bottom: 16px;
-      opacity: 0.5;
-    }
-    
-    .empty-state-title {
-      font-size: 20px;
-      font-weight: 600;
-      margin-bottom: 8px;
-      color: #495057;
-    }
-    
-    .empty-state-text {
-      font-size: 16px;
-    }
-    
-    .loading {
+
+    .card-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius);
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 40px;
-      color: #6c757d;
+      font-size: 1.25rem;
     }
-    
-    .loading-spinner {
-      width: 24px;
-      height: 24px;
-      border: 3px solid #f3f3f3;
-      border-top: 3px solid #007bff;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-right: 12px;
+
+    .card-icon.primary { background: rgba(59, 130, 246, 0.1); color: var(--cfa-blue); }
+    .card-icon.success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+    .card-icon.warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
+    .card-icon.danger { background: rgba(239, 68, 68, 0.1); color: var(--error); }
+
+    .card-value {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--cfa-gray-900);
+      line-height: 1;
+      margin-bottom: 0.5rem;
     }
-    
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
+
+    .card-description {
+      color: var(--cfa-gray-600);
+      font-size: 0.875rem;
     }
-    
-    /* Responsive Design */
+
+    /* === Status Chips === */
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .status-chip.success {
+      background: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+    }
+
+    .status-chip.warning {
+      background: rgba(245, 158, 11, 0.1);
+      color: var(--warning);
+    }
+
+    .status-chip.danger {
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--error);
+    }
+
+    .status-chip.neutral {
+      background: var(--cfa-gray-100);
+      color: var(--cfa-gray-600);
+    }
+
+    /* === Tables === */
+    .table-container {
+      background: white;
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--cfa-gray-200);
+      overflow: hidden;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .table th {
+      background: var(--cfa-gray-50);
+      padding: 1rem;
+      text-align: left;
+      font-weight: 600;
+      color: var(--cfa-gray-700);
+      border-bottom: 1px solid var(--cfa-gray-200);
+      font-size: 0.875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .table td {
+      padding: 1rem;
+      border-bottom: 1px solid var(--cfa-gray-100);
+      color: var(--cfa-gray-800);
+    }
+
+    .table tbody tr:hover {
+      background: var(--cfa-gray-50);
+    }
+
+    /* === Navigation === */
+    .nav-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--cfa-gray-200);
+      margin-bottom: 2rem;
+    }
+
+    .nav-tab {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      background: none;
+      color: var(--cfa-gray-600);
+      font-weight: 600;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .nav-tab.active {
+      color: var(--cfa-red);
+      border-bottom-color: var(--cfa-red);
+    }
+
+    .nav-tab:hover:not(.active) {
+      color: var(--cfa-gray-800);
+    }
+
+    /* === Messages === */
+    .message {
+      padding: 1rem;
+      border-radius: var(--radius);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .message.error {
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--error);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    .message.success {
+      background: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .message.warning {
+      background: rgba(245, 158, 11, 0.1);
+      color: var(--warning);
+      border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+
+    /* === Responsive === */
     @media (max-width: 768px) {
-      .dashboard-container {
-        padding: 15px;
+      .main-content {
+        padding: 1rem;
       }
       
-      .dashboard-header {
-        flex-direction: column;
-        gap: 20px;
-        text-align: center;
+      .topbar {
+        padding: 1rem;
       }
       
-      .header-left h1 {
-        font-size: 28px;
-      }
-      
-      .nav-tabs {
-        flex-direction: column;
-      }
-      
-      .stats-grid {
+      .cards-grid {
         grid-template-columns: 1fr;
       }
       
-      .section-actions {
-        flex-direction: column;
-        width: 100%;
+      .login-card {
+        margin: 1rem;
+        padding: 2rem;
       }
-      
-      .btn-secondary {
-        width: 100%;
-      }
+    }
+
+    /* === Animations === */
+    .fade-in {
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
   </style>
 </head>
 <body>
-  <div class="dashboard-container">
-    <!-- Header -->
-    <div class="dashboard-header">
-      <div class="header-left">
-        <h1>Director Dashboard</h1>
-        <div class="header-subtitle">Standards Management & Oversight</div>
-      </div>
-      
-      <div class="header-right">
-        <div class="user-info">
-          <div class="user-name">${user.employee || user.email}</div>
-          <div class="user-role">Director</div>
-        </div>
-        <button class="logout-btn" onclick="logout()">Logout</button>
-      </div>
-    </div>
-    
-    <!-- Navigation -->
-    <div class="dashboard-nav">
-      <ul class="nav-tabs">
-        <li class="nav-tab active">
-          <button onclick="showTab('overview')">Overview</button>
-        </li>
-        <li class="nav-tab">
-          <button onclick="showTab('employees')">Employee Search</button>
-        </li>
-        <li class="nav-tab">
-          <button onclick="showTab('milestones')">Pending Milestones</button>
-        </li>
-        <li class="nav-tab">
-          <button onclick="showTab('grace')">Grace Requests</button>
-        </li>
-        <li class="nav-tab">
-          <button onclick="showTab('reports')">Reports</button>
-        </li>
-        <li class="nav-tab">
-          <button onclick="showTab('bulk')">Bulk Operations</button>
-        </li>
-      </ul>
-    </div>
-    
-    <!-- Content -->
-    <div class="dashboard-content">
-      <!-- Overview Tab -->
-      <div id="overview" class="tab-content active">
-        <!-- Stats Grid -->
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-icon pending">📋</div>
-            <div class="stat-title">Pending Milestones</div>
-            <div class="stat-number" id="pendingCount">—</div>
-            <div class="stat-change">Requiring attention</div>
-          </div>
-          
-          <div class="stat-card">
-            <div class="stat-icon probation">⚠️</div>
-            <div class="stat-title">Active Probation</div>
-            <div class="stat-number" id="probationCount">—</div>
-            <div class="stat-change">Under monitoring</div>
-          </div>
-          
-          <div class="stat-card">
-            <div class="stat-icon grace">⏰</div>
-            <div class="stat-title">Grace Requests</div>
-            <div class="stat-number" id="graceCount">—</div>
-            <div class="stat-change">Pending approval</div>
-          </div>
-          
-          <div class="stat-card">
-            <div class="stat-icon events">📊</div>
-            <div class="stat-title">This Month's Events</div>
-            <div class="stat-number" id="eventsCount">—</div>
-            <div class="stat-change">Total incidents</div>
-          </div>
-        </div>
-        
-        <div id="pending-milestones-list">
-          <!-- Dynamic content loaded here -->
-        </div>
-      </div>
-      
-      <script>
-        const sessionId = ${JSON.stringify(sessionId)};
+  <div id="app"></div>
+  <script>
+    (function(){
+      const state = { session: null, user: null };
+      const $ = (id) => document.getElementById(id);
 
-        // ---------- Helper Functions ----------
-        function $(id) { return document.getElementById(id); }
+      function setQuerySession(session) {
+        try {
+          const base = window.location.href.split('?')[0];
+          const hash = window.location.hash || '';
+          const qs = session ? ('?session=' + encodeURIComponent(session)) : '';
+          window.top.history.replaceState(null, '', base + qs + hash);
+        } catch (_) {}
+      }
 
-        // ---------- Event Listeners Setup ----------
-        document.addEventListener('DOMContentLoaded', function() {
-          console.log('🎯 DIRECTOR DASHBOARD LOADED');
-          
-          // Attach button event listeners
-          $('logoutBtn').addEventListener('click', logout);
-          $('employeeSearchBtn').addEventListener('click', showEmployeeSearch);
-          $('pendingMilestonesBtn').addEventListener('click', showPendingMilestones);
-          $('graceRequestsBtn').addEventListener('click', showGraceRequests);
-          $('reportsBtn').addEventListener('click', showReports);
-          $('bulkOperationsBtn').addEventListener('click', showBulkOperations);
-          
-          // Load dashboard data
-          loadDashboardData();
-        });
+      function showMessage(text, type = 'error') {
+        const app = $('app');
+        const messageEl = document.createElement('div');
+        messageEl.className = \`message \${type} fade-in\`;
+        messageEl.innerHTML = \`
+          <div class="loading-spinner"></div>
+          <span>\${text}</span>
+        \`;
         
-        function logout() {
-          console.log('Director logout clicked');
-          window.open('?page=login', '_top');
+        // Remove existing messages
+        const existing = app.querySelector('.message');
+        if (existing) existing.remove();
+        
+        app.insertBefore(messageEl, app.firstChild);
+        
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+          if (messageEl.parentNode) {
+            messageEl.remove();
+          }
+        }, 5000);
+      }
+
+      function showLoading() {
+        const overlay = document.createElement('div');
+        overlay.className = 'loading-overlay';
+        overlay.innerHTML = \`
+          <div style="text-align: center;">
+            <div class="loading-spinner" style="width: 40px; height: 40px; border-width: 4px;"></div>
+            <p style="margin-top: 1rem; color: var(--cfa-gray-600);">Loading...</p>
+          </div>
+        \`;
+        document.body.appendChild(overlay);
+        return overlay;
+      }
+
+      function hideLoading(overlay) {
+        if (overlay && overlay.parentNode) {
+          overlay.remove();
         }
-        
-        // ---------- Dashboard Functions ----------
-        function loadDashboardData() {
-          console.log('Loading director dashboard data...');
+      }
+
+      function render(token) {
+        const route = token || '';
+        if (!state.user) {
+          return renderLogin();
+        }
+        if (route.startsWith('dashboard:')) {
+          const role = route.split(':')[1] || state.user.role || 'employee';
+          return renderDashboard(role);
+        }
+        if (route === 'employeeSearch') {
+          return renderEmployeeSearch();
+        }
+        return renderDashboard(state.user.role || 'employee');
+      }
+
+      function renderLogin() {
+        const app = $('app');
+        app.innerHTML = \`
+          <div class="login-container">
+            <div class="login-card fade-in">
+              <div class="login-logo">C</div>
+              <h1 class="login-title">CLEAR</h1>
+              <p class="login-subtitle">Performance Management Portal</p>
+              
+              <form id="loginForm">
+                <div class="form-group">
+                  <label for="email" class="form-label">Email Address</label>
+                  <input type="email" id="email" class="form-input" required 
+                         placeholder="Enter your email" autocomplete="email" />
+                </div>
+                
+                <div class="form-group">
+                  <label for="password" class="form-label">Password</label>
+                  <input type="password" id="password" class="form-input" required 
+                         placeholder="Enter your password" autocomplete="current-password" />
+                </div>
+                
+                <button type="submit" id="loginBtn" class="btn btn-primary">
+                  <span id="loginBtnText">Sign In</span>
+                  <div id="loginSpinner" class="loading-spinner" style="display: none; margin-left: 0.5rem;"></div>
+                </button>
+              </form>
+              
+              <div id="msg" style="margin-top: 1rem;"></div>
+            </div>
+          </div>
+        \`;
+
+        $('loginForm').addEventListener('submit', (e) => {
+          e.preventDefault();
+          const email = $('email').value;
+          const password = $('password').value;
+          const btn = $('loginBtn');
+          const btnText = $('loginBtnText');
+          const spinner = $('loginSpinner');
+          
+          if (!email || !password) { 
+            showMessage('Please enter both email and password', 'error'); 
+            return; 
+          }
+          
+          btn.disabled = true;
+          btnText.textContent = 'Signing in...';
+          spinner.style.display = 'inline-block';
           
           google.script.run
-            .withSuccessHandler(function(data) {
-              console.log('✅ Director dashboard data received:', data);
+            .withSuccessHandler((result) => {
+              if (result && result.ok) {
+                state.session = result.sessionId;
+                state.user = { email: result.email, role: result.role, employee: result.employee };
+                setQuerySession(state.session);
+                const token = 'dashboard:' + (result.role || 'employee');
+                google.script.history.replace(token);
+                render(token);
+              } else {
+                showMessage((result && result.error) || 'Login failed', 'error');
+                btn.disabled = false;
+                btnText.textContent = 'Sign In';
+                spinner.style.display = 'none';
+              }
+            })
+            .withFailureHandler((err) => {
+              showMessage('Login error: ' + (err && err.message ? err.message : err), 'error');
+              btn.disabled = false;
+              btnText.textContent = 'Sign In';
+              spinner.style.display = 'none';
+            })
+            .loginWithPassword(email, password);
+        });
+      }
+
+      function renderDashboard(role) {
+        const app = $('app');
+        const roleTitle = role.charAt(0).toUpperCase() + role.slice(1);
+        
+        app.innerHTML = \`
+          <div class="dashboard">
+            <div class="topbar">
+              <div class="brand">
+                <div class="brand-logo">C</div>
+                <div class="brand-text">CLEAR</div>
+              </div>
+              <div class="topbar-actions">
+                <div class="user-info">
+                  <div class="user-avatar">\${(state.user?.employee || state.user?.email || 'U').charAt(0).toUpperCase()}</div>
+                  <span>\${state.user?.employee || state.user?.email || 'User'}</span>
+                </div>
+                \${role === 'director' || role === 'lead' ? '<button id="toSearch" class="btn btn-secondary">Employee Search</button>' : ''}
+                <button id="logoutBtn" class="btn btn-danger">Logout</button>
+              </div>
+            </div>
+            
+            <div class="main-content">
+              <div class="page-header">
+                <h1 class="page-title">\${roleTitle} Dashboard</h1>
+                <p class="page-subtitle">Welcome back, \${state.user?.employee || state.user?.email || 'User'}</p>
+              </div>
               
-              $('pendingCount').textContent = data.pendingMilestones || 0;
-              $('probationCount').textContent = data.activeProbation || 0;
-              $('graceCount').textContent = data.graceRequests || 0;
-              $('eventsCount').textContent = data.monthlyEvents || 0;
+              <div id="dashboardContent">
+                <div class="loading-overlay">
+                  <div style="text-align: center;">
+                    <div class="loading-spinner" style="width: 40px; height: 40px; border-width: 4px;"></div>
+                    <p style="margin-top: 1rem; color: var(--cfa-gray-600);">Loading dashboard...</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        \`;
+
+        // Event listeners
+        $('logoutBtn').addEventListener('click', () => {
+          const s = state.session;
+          state.session = null; 
+          state.user = null;
+          setQuerySession('');
+          try { google.script.history.replace(''); } catch(_){}
+          if (s) { try { google.script.run.logoutSession(s); } catch(_){} }
+          render('');
+        });
+
+        if ($('toSearch')) {
+          $('toSearch').addEventListener('click', () => {
+            google.script.history.push('employeeSearch');
+          });
+        }
+
+        // Load role-specific content
+        loadDashboardContent(role);
+      }
+
+      function loadDashboardContent(role) {
+        const contentEl = $('dashboardContent');
+        
+        if (role === 'director') {
+          loadDirectorDashboard(contentEl);
+        } else if (role === 'lead') {
+          loadLeadDashboard(contentEl);
+        } else {
+          loadEmployeeDashboard(contentEl);
+        }
+      }
+
+      function loadDirectorDashboard(container) {
+        google.script.run
+          .withSuccessHandler((data) => {
+            if (data && !data.error) {
+              container.innerHTML = \`
+                <div class="cards-grid">
+                  <div class="card fade-in">
+                    <div class="card-header">
+                      <div class="card-title">Pending Milestones</div>
+                      <div class="card-icon warning">⚠️</div>
+                    </div>
+                    <div class="card-value">\${data.pendingMilestones || 0}</div>
+                    <div class="card-description">Requiring director assignment</div>
+                  </div>
+                  
+                  <div class="card fade-in">
+                    <div class="card-header">
+                      <div class="card-title">Active Probation</div>
+                      <div class="card-icon danger">🚨</div>
+                    </div>
+                    <div class="card-value">\${data.activeProbation || 0}</div>
+                    <div class="card-description">Employees on probation</div>
+                  </div>
+                  
+                  <div class="card fade-in">
+                    <div class="card-header">
+                      <div class="card-title">Grace Requests</div>
+                      <div class="card-icon primary">🤝</div>
+                    </div>
+                    <div class="card-value">\${data.graceRequests || 0}</div>
+                    <div class="card-description">Pending approval</div>
+                  </div>
+                  
+                  <div class="card fade-in">
+                    <div class="card-header">
+                      <div class="card-title">Monthly Events</div>
+                      <div class="card-icon success">📊</div>
+                    </div>
+                    <div class="card-value">\${data.monthlyEvents || 0}</div>
+                    <div class="card-description">This month's incidents</div>
+                  </div>
+                </div>
+                
+                <div class="nav-tabs">
+                  <button class="nav-tab active" data-tab="pending">Pending Milestones</button>
+                  <button class="nav-tab" data-tab="reports">Reports</button>
+                  <button class="nav-tab" data-tab="bulk">Bulk Operations</button>
+                </div>
+                
+                <div id="tabContent">
+                  <div class="table-container">
+                    <table class="table">
+                      <thead>
+                        <tr>
+                          <th>Employee</th>
+                          <th>Milestone</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td colspan="4" style="text-align: center; padding: 2rem; color: var(--cfa-gray-500);">
+                            Loading pending milestones...
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              \`;
               
               // Load pending milestones
               loadPendingMilestones();
-            })
-            .withFailureHandler(function(err) {
-              console.error('❌ Error loading director dashboard data:', err);
-              $('pendingCount').textContent = 'Error';
-              $('probationCount').textContent = 'Error';
-              $('graceCount').textContent = 'Error';
-              $('eventsCount').textContent = 'Error';
-            })
-            .getDirectorDashboardData();
-        }
-          
-        function loadPendingMilestones() {
-          console.log('Loading pending milestones...');
-          
-          google.script.run
-            .withSuccessHandler(function(milestones) {
-              const container = $('pending-milestones-list');
-              if (milestones.length === 0) {
-                container.innerHTML = '<p>No pending milestones.</p>';
-                return;
-              }
-              
-              let html = '<h3>Pending Milestones Requiring Attention</h3>';
-              milestones.forEach(function(milestone) {
-                html += '<div class="pending-milestones">' +
-                  '<strong>' + milestone.employee + '</strong> - ' + milestone.milestone + 
-                  ' (Row: ' + milestone.row + ')' +
-                  '<button onclick="assignDirector(' + milestone.row + ')">Assign Director</button>' +
-                  '<button onclick="viewDetails(' + milestone.row + ')">View Details</button>' +
-                  '</div>';
-              });
-              container.innerHTML = html;
-            })
-            .withFailureHandler(function(err) {
-              console.error('❌ Error loading pending milestones:', err);
-              $('pending-milestones-list').innerHTML = '<p>Error loading milestones</p>';
-            })
-            .getPendingMilestones();
-        }
-        
-        function assignDirector(row) {
-          const director = prompt('Enter director name:');
-          if (director) {
-            google.script.run
-              .withSuccessHandler(function() { loadPendingMilestones(); })
-              .assignMilestoneDirector(row, director);
-          }
-        }
-        
-        function showEmployeeSearch() {
-          window.open('?session=' + encodeURIComponent(sessionId) + '&page=employeeSearch', '_top');
-        }
-        
-        function showPendingMilestones() {
-          console.log('Showing pending milestones');
-          $('content-area').innerHTML = '<h3>Pending Milestones</h3><div id="milestones-container">Loading...</div>';
-          loadPendingMilestones();
-        }
-        
-        function showGraceRequests() {
-          console.log('Showing grace requests');
-          $('content-area').innerHTML = '<h3>Grace Requests</h3><div id="grace-container">Coming soon...</div>';
-        }
-        
-        function showReports() {
-          console.log('Showing reports');
-          $('content-area').innerHTML = '<h3>Reports</h3><button onclick="generateMonthlyReport()">Generate Monthly Report</button><div id="report-container"></div>';
-        }
-        
-        function showBulkOperations() {
-          console.log('Showing bulk operations');
-          $('content-area').innerHTML = '<h3>Bulk Operations</h3><div id="bulk-container">Coming soon...</div>';
-        }
-      </script>
-    </body>
-    </html>
-  `)
-    .setTitle('CLEAR — Director Dashboard')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .setSandboxMode(HtmlService.SandboxMode.NATIVE);
-}
-
-// For directors
-function renderLeadDashboard(user, sessionId) {
-  return HtmlService.createHtmlOutput(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>CLEAR — Lead Dashboard</title>
-      <style>
-        .lead-nav { display: flex; gap: 10px; margin-bottom: 20px; }
-        .lead-nav button { padding: 10px 15px; background: #2563eb; color: white; border: none; border-radius: 5px; cursor: pointer; }
-        .lead-nav button:hover { background: #1d4ed8; }
-        .content-area { padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-        .stat-card { background: #f8fafc; padding: 15px; border-radius: 8px; text-align: center; }
-        .stat-number { font-size: 24px; font-weight: bold; color: #dc2626; }
-        .pending-milestones { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 10px; margin: 10px 0; }
-      </style>
-    </head>
-    <body>
-      <h1>Lead Dashboard</h1>
-      
-      <nav class="lead-nav">
-        <button onclick="showEmployeeSearch()">Employee Search</button>
-        <button onclick="showPendingMilestones()">Pending Milestones</button>
-        <button onclick="showReports()">Reports</button>
-        <button onclick="showGraceRequests()">Grace Requests</button>
-      </nav>
-      
-      <div id="content-area">
-        <div class="stats-grid">
-          <div class="stat-card">
-            <h3>Pending Milestones</h3>
-            <div class="stat-number" id="pendingCount">—</div>
-          </div>
-          <div class="stat-card">
-            <h3>Active Probation</h3>
-            <div class="stat-number" id="probationCount">—</div>
-          </div>
-          <div class="stat-card">
-            <h3>Grace Requests</h3>
-            <div class="stat-number" id="graceCount">—</div>
-          </div>
-          <div class="stat-card">
-            <h3>This Month's Events</h3>
-            <div class="stat-number" id="eventsCount">—</div>
-          </div>
-        </div>
-        
-        <div id="pending-milestones-list">
-          <!-- Dynamic content loaded here -->
-        </div>
-      </div>
-      
-      <script>
-        const sessionId = ${JSON.stringify(sessionId)};
-
-        // Load dashboard data
-        google.script.run
-          .withSuccessHandler(function(data) {
-            document.getElementById('pendingCount').textContent = data.pendingMilestones || 0;
-            document.getElementById('probationCount').textContent = data.activeProbation || 0;
-            document.getElementById('graceCount').textContent = data.graceRequests || 0;
-            document.getElementById('eventsCount').textContent = data.monthlyEvents || 0;
-            
-            // Load pending milestones
-            loadPendingMilestones();
+            } else {
+              container.innerHTML = \`
+                <div class="message error">
+                  <span>Failed to load dashboard data. Please try again.</span>
+                </div>
+              \`;
+            }
+          })
+          .withFailureHandler((err) => {
+            container.innerHTML = \`
+              <div class="message error">
+                <span>Network error: \${err.message || err}</span>
+              </div>
+            \`;
           })
           .getDirectorDashboardData();
+      }
+
+      function loadLeadDashboard(container) {
+        container.innerHTML = \`
+          <div class="cards-grid">
+            <div class="card fade-in">
+              <div class="card-header">
+                <div class="card-title">Team Overview</div>
+                <div class="card-icon primary">👥</div>
+              </div>
+              <div class="card-value">—</div>
+              <div class="card-description">Team performance metrics</div>
+            </div>
+            
+            <div class="card fade-in">
+              <div class="card-header">
+                <div class="card-title">Pending Reviews</div>
+                <div class="card-icon warning">📋</div>
+              </div>
+              <div class="card-value">—</div>
+              <div class="card-description">Items requiring attention</div>
+            </div>
+          </div>
           
-        function loadPendingMilestones() {
-          google.script.run
-            .withSuccessHandler(function(milestones) {
-              const container = document.getElementById('pending-milestones-list');
-              if (milestones.length === 0) {
-                container.innerHTML = '<p>No pending milestones.</p>';
-                return;
+          <div class="message warning">
+            <span>Lead dashboard features coming soon. Contact your director for team-specific data.</span>
+          </div>
+        \`;
+      }
+
+      function loadEmployeeDashboard(container) {
+        container.innerHTML = \`
+          <div class="cards-grid">
+            <div class="card fade-in">
+              <div class="card-header">
+                <div class="card-title">Current Status</div>
+                <div class="card-icon primary">📊</div>
+              </div>
+              <div class="card-value" id="statusValue">Loading...</div>
+              <div class="card-description" id="statusDescription">Your performance metrics</div>
+            </div>
+            
+            <div class="card fade-in">
+              <div class="card-header">
+                <div class="card-title">Active Milestone</div>
+                <div class="card-icon warning">🎯</div>
+              </div>
+              <div class="card-value" id="milestoneValue">Loading...</div>
+              <div class="card-description" id="milestoneDescription">Current active milestone</div>
+            </div>
+            
+            <div class="card fade-in">
+              <div class="card-header">
+                <div class="card-title">Grace Available</div>
+                <div class="card-icon success">🤝</div>
+              </div>
+              <div class="card-value" id="graceValue">Loading...</div>
+              <div class="card-description" id="graceDescription">Available grace credits</div>
+            </div>
+          </div>
+          
+          <div class="table-container" style="margin-top: 2rem;">
+            <h3 style="padding: 1rem 1rem 0; margin: 0; color: var(--cfa-gray-800);">Recent History</h3>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Event</th>
+                  <th>Points</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colspan="5" style="text-align: center; padding: 2rem; color: var(--cfa-gray-500);">
+                    Loading your history...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        \`;
+        
+        // Load employee data
+        loadEmployeeData();
+      }
+
+      function loadEmployeeData() {
+        if (!state.user?.email) return;
+        
+        // Load main overview data
+        google.script.run
+          .withSuccessHandler((data) => {
+            if (data && !data.error) {
+              // Update status card
+              const statusCard = document.getElementById('statusValue');
+              const statusDesc = document.getElementById('statusDescription');
+              if (statusCard) {
+                statusCard.textContent = data.effectivePoints || '0';
+                statusDesc.textContent = 'Rolling points (effective)';
               }
               
-              let html = '<h3>Pending Milestones Requiring Attention</h3>';
-              milestones.forEach(function(milestone) {
-                html += '<div class="pending-milestones">' +
-                  '<strong>' + milestone.employee + '</strong> - ' + milestone.milestone + 
-                  ' (Row: ' + milestone.row + ')' +
-                  '<button onclick="assignDirector(' + milestone.row + ')">Assign Director</button>' +
-                  '<button onclick="viewDetails(' + milestone.row + ')">View Details</button>' +
-                  '</div>';
-              });
-              container.innerHTML = html;
+              // Update history table
+              const tbody = document.querySelector('.table tbody');
+              if (tbody && data.rows && data.rows.length > 0) {
+                tbody.innerHTML = data.rows.slice(0, 10).map(row => {
+                  const isAppealable = row.eventType && 
+                    row.eventType.toLowerCase() === 'disciplinary event' && 
+                    row.active;
+                  
+                  return \`
+                    <tr>
+                      <td>\${row.date || '—'}</td>
+                      <td>\${row.event || '—'}</td>
+                      <td>\${row.points || '—'}</td>
+                      <td><span class="status-chip \${row.active ? 'warning' : 'neutral'}">\${row.active ? 'Active' : 'Completed'}</span></td>
+                      <td>
+                        \${isAppealable ? \`
+                          <button class="btn btn-secondary" onclick="showAppealModal(\${row.row})" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+                            Appeal
+                          </button>
+                        \` : '—'}
+                      </td>
+                    </tr>
+                  \`;
+                }).join('');
+              } else if (tbody) {
+                tbody.innerHTML = \`
+                  <tr>
+                    <td colspan="5" style="text-align: center; padding: 2rem; color: var(--cfa-gray-500);">
+                      No history found.
+                    </td>
+                  </tr>
+                \`;
+              }
+            }
+          })
+          .withFailureHandler((err) => {
+            showMessage('Failed to load your data: ' + (err.message || err), 'error');
+          })
+          .getMyOverviewForEmail(state.user.email);
+        
+        // Load active milestone
+        google.script.run
+          .withSuccessHandler((milestone) => {
+            const milestoneValue = document.getElementById('milestoneValue');
+            const milestoneDesc = document.getElementById('milestoneDescription');
+            if (milestoneValue) {
+              if (milestone) {
+                milestoneValue.textContent = milestone.milestone || 'Active';
+                milestoneDesc.textContent = milestone.consequence || 'Current milestone';
+              } else {
+                milestoneValue.textContent = 'None';
+                milestoneDesc.textContent = 'No active milestones';
+              }
+            }
+          })
+          .withFailureHandler((err) => {
+            const milestoneValue = document.getElementById('milestoneValue');
+            if (milestoneValue) {
+              milestoneValue.textContent = 'Error';
+            }
+          })
+          .getActiveMilestone(state.user.email);
+        
+        // Load grace credits
+        google.script.run
+          .withSuccessHandler((credits) => {
+            const graceValue = document.getElementById('graceValue');
+            const graceDesc = document.getElementById('graceDescription');
+            if (graceValue) {
+              if (credits && credits.length > 0) {
+                graceValue.textContent = credits.length;
+                graceDesc.innerHTML = credits.slice(0, 3).map(credit => 
+                  \`<div style="font-size: 0.75rem; margin: 0.25rem 0;">• \${credit.reason || 'Grace credit'}</div>\`
+                ).join('');
+              } else {
+                graceValue.textContent = '0';
+                graceDesc.textContent = 'No grace credits available';
+              }
+            }
+          })
+          .withFailureHandler((err) => {
+            const graceValue = document.getElementById('graceValue');
+            if (graceValue) {
+              graceValue.textContent = 'Error';
+            }
+          })
+          .getGraceCredits(state.user.email);
+      }
+
+      // Global function for appeal modal
+      window.showAppealModal = function(row) {
+        const reason = prompt('Please provide a reason for your appeal:');
+        if (reason && reason.trim()) {
+          const overlay = showLoading();
+          
+          google.script.run
+            .withSuccessHandler((result) => {
+              hideLoading(overlay);
+              if (result.success) {
+                showMessage('Appeal submitted successfully! Your milestone has been canceled.', 'success');
+                // Reload the data to reflect changes
+                setTimeout(() => {
+                  loadEmployeeData();
+                }, 1000);
+              } else {
+                showMessage('Failed to submit appeal: ' + (result.error || 'Unknown error'), 'error');
+              }
             })
-            .getPendingMilestones();
+            .withFailureHandler((err) => {
+              hideLoading(overlay);
+              showMessage('Error submitting appeal: ' + (err.message || err), 'error');
+            })
+            .submitAppeal(state.user.email, row, reason.trim());
         }
-        
-        function assignDirector(row) {
-          const director = prompt('Enter director name:');
-          if (director) {
+      };
+
+      function loadPendingMilestones() {
+        google.script.run
+          .withSuccessHandler((milestones) => {
+            const tbody = document.querySelector('.table tbody');
+            if (tbody) {
+              if (milestones && milestones.length > 0) {
+                tbody.innerHTML = milestones.map(milestone => \`
+                  <tr>
+                    <td>\${milestone.employee || '—'}</td>
+                    <td>\${milestone.milestone || '—'}</td>
+                    <td><span class="status-chip warning">Pending</span></td>
+                    <td>
+                      <button class="btn btn-secondary" onclick="assignDirector(\${milestone.row})" style="padding: 0.5rem 1rem; font-size: 0.875rem;">
+                        Assign Director
+                      </button>
+                    </td>
+                  </tr>
+                \`).join('');
+              } else {
+                tbody.innerHTML = \`
+                  <tr>
+                    <td colspan="4" style="text-align: center; padding: 2rem; color: var(--cfa-gray-500);">
+                      No pending milestones.
+                    </td>
+                  </tr>
+                \`;
+              }
+            }
+          })
+          .withFailureHandler((err) => {
+            const tbody = document.querySelector('.table tbody');
+            if (tbody) {
+              tbody.innerHTML = \`
+                <tr>
+                  <td colspan="4" style="text-align: center; padding: 2rem; color: var(--error);">
+                    Error loading milestones: \${err.message || err}
+                  </td>
+                </tr>
+              \`;
+            }
+          })
+          .getPendingMilestones();
+      }
+
+      function renderEmployeeSearch() {
+        const app = $('app');
+        app.innerHTML = \`
+          <div class="dashboard">
+            <div class="topbar">
+              <div class="brand">
+                <div class="brand-logo">C</div>
+                <div class="brand-text">CLEAR</div>
+              </div>
+              <div class="topbar-actions">
+                <button id="backBtn" class="btn btn-secondary">← Back to Dashboard</button>
+                <button id="logoutBtn" class="btn btn-danger">Logout</button>
+              </div>
+            </div>
+            
+            <div class="main-content">
+              <div class="page-header">
+                <h1 class="page-title">Employee Search</h1>
+                <p class="page-subtitle">Search and view employee performance data</p>
+              </div>
+              
+              <div class="message warning">
+                <span>Employee search functionality is coming soon. This feature will allow you to search for employees and view their performance history.</span>
+              </div>
+            </div>
+          </div>
+        \`;
+
+        $('backBtn').addEventListener('click', () => {
+          const token = 'dashboard:' + (state.user && state.user.role || 'employee');
+          google.script.history.replace(token);
+          render(token);
+        });
+
+        $('logoutBtn').addEventListener('click', () => {
+          const s = state.session;
+          state.session = null; 
+          state.user = null;
+          setQuerySession('');
+          try { google.script.history.replace(''); } catch(_){}
+          if (s) { try { google.script.run.logoutSession(s); } catch(_){} }
+          render('');
+        });
+      }
+
+      function bootstrap(){
+        google.script.url.getLocation((loc) => {
+          const session = (loc && loc.parameter && loc.parameter.session) ? loc.parameter.session : null;
+          const token = (loc && typeof loc.hash === 'string') ? loc.hash : '';
+          if (session) {
             google.script.run
-              .withSuccessHandler(function() { loadPendingMilestones(); })
-              .assignMilestoneDirector(row, director);
-          }
-        }
-        
-        function showEmployeeSearch() {
-          window.open('?session=' + encodeURIComponent(sessionId) + '&page=employeeSearch', '_top');
-        }
-        
-        function showPendingMilestones() {
-          document.getElementById('content-area').innerHTML = '<h3>Pending Milestones</h3><div id="milestones-container">Loading...</div>';
-          loadPendingMilestones();
-        }
-        
-        function showReports() {
-          document.getElementById('content-area').innerHTML = '<h3>Reports</h3><button onclick="generateMonthlyReport()">Generate Monthly Report</button><div id="report-container"></div>';
-        }
-      </script>
-    </body>
-    </html>
-  `)
-    .setTitle('CLEAR — Lead Dashboard')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .setSandboxMode(HtmlService.SandboxMode.NATIVE);
-}
-
-function renderEmployeeDashboard(user, sessionId) {
-  return HtmlService.createHtmlOutput(`
-<!DOCTYPE html>
-<html>
-<head>
-  <title>CLEAR — My Dashboard</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-    .container { max-width: 800px; margin: 0 auto; }
-    .header { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
-    .stat-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
-    .stat-number { font-size: 32px; font-weight: bold; color: #dc2626; }
-    .stat-label { color: #666; margin-top: 5px; }
-    .infraction-card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #dc2626; }
-    .infraction-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-    .infraction-title { font-weight: bold; }
-    .infraction-date { color: #666; font-size: 14px; }
-    .infraction-details { color: #666; margin-bottom: 10px; }
-    .action-buttons { display: flex; gap: 10px; }
-    .btn { padding: 8px 16px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; }
-    .btn-grace { background: #28a745; color: white; }
-    .btn-appeal { background: #ffc107; color: black; }
-    .btn:disabled { background: #ccc; cursor: not-allowed; }
-    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
-    .modal-content { background: white; margin: 10% auto; padding: 20px; border-radius: 8px; width: 90%; max-width: 500px; }
-    .form-group { margin-bottom: 15px; }
-    .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
-    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
-    .logout-btn { background: #dc2626; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; float: right; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <button class="logout-btn" onclick="logout()">Logout</button>
-      <h1>My CLEAR Dashboard</h1>
-      <p>Welcome, ` + (user.employee || user.email) + `!</p>
-    </div>
-
-    <!-- Stats Section -->
-    <div id="stats-section">
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-number" id="current-points">—</div>
-          <div class="stat-label">Current Points</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" id="grace-balance">—</div>
-          <div class="stat-label">Grace Balance</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" id="active-infractions">—</div>
-          <div class="stat-label">Active Infractions</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Infractions Section -->
-    <div id="infractions-section">
-      <h2>My Recent Infractions</h2>
-      <div id="infractions-list">
-        <p>Loading infractions...</p>
-      </div>
-    </div>
-  </div>
-
-  <!-- Grace Request Modal -->
-  <div id="grace-modal" class="modal">
-    <div class="modal-content">
-      <h3>Request Grace</h3>
-      <form id="grace-form">
-        <div class="form-group">
-          <label>Grace Type:</label>
-          <select id="grace-type" required>
-            <option value="">Select grace type...</option>
-            <option value="minor">Minor Grace</option>
-            <option value="moderate">Moderate Grace</option>
-            <option value="major">Major Grace</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Reason:</label>
-          <textarea id="grace-reason" rows="3" placeholder="Explain why you're requesting grace..." required></textarea>
-        </div>
-        <button type="submit" class="btn btn-grace">Submit Grace Request</button>
-        <button type="button" onclick="closeModal()" class="btn">Cancel</button>
-      </form>
-    </div>
-  </div>
-
-  <!-- Appeal Modal -->
-  <div id="appeal-modal" class="modal">
-    <div class="modal-content">
-      <h3>Appeal Infraction</h3>
-      <form id="appeal-form">
-        <div class="form-group">
-          <label>Appeal Explanation:</label>
-          <textarea id="appeal-explanation" rows="4" placeholder="Explain your appeal..." required></textarea>
-        </div>
-        <button type="submit" class="btn btn-appeal">Submit Appeal</button>
-        <button type="button" onclick="closeModal()" class="btn">Cancel</button>
-      </form>
-    </div>
-  </div>
-
-  <script>
-    const sessionId = ${JSON.stringify(sessionId)};
-    function logout() {
-      window.open('?page=login', '_top');
-    }
-    
-    // Load dashboard data on page load
-    document.addEventListener('DOMContentLoaded', function() {
-      loadDashboardData();
-      loadRecentInfractions();
-    });
-    
-    function loadDashboardData() {
-      google.script.run
-        .withSuccessHandler(function(data) {
-          document.getElementById('current-points').textContent = data.currentPoints || 0;
-          document.getElementById('grace-balance').textContent = data.graceBalance || 0;
-          document.getElementById('active-infractions').textContent = data.activeInfractions || 0;
-        })
-        .withFailureHandler(function(error) {
-          console.error('Error loading dashboard data:', error);
-          showMessage('Error loading dashboard data', 'error');
-        })
-        .getEmployeeDashboardData('` + (user.email || '') + `');
-    }
-    
-    function loadRecentInfractions() {
-      google.script.run
-        .withSuccessHandler(function(infractions) {
-          displayInfractions(infractions);
-        })
-        .withFailureHandler(function(error) {
-          console.error('Error loading infractions:', error);
-          document.getElementById('infractions-list').innerHTML = '<p>Error loading infractions</p>';
-        })
-        .getEmployeeInfractions('` + (user.email || '') + `');
-    }
-    
-    function displayInfractions(infractions) {
-      const container = document.getElementById('infractions-list');
-      
-      if (!infractions || infractions.length === 0) {
-        container.innerHTML = '<p>No recent infractions found.</p>';
-        return;
-      }
-      
-      let html = '';
-      infractions.forEach(function(infraction) {
-        const canRequestGrace = checkGraceEligibility(infraction);
-        const canAppeal = true; // All infractions can be appealed
-        
-        html += '<div class="infraction-card">' +
-          '<div class="infraction-header">' +
-            '<div class="infraction-title">' + (infraction.infraction || 'Infraction') + '</div>' +
-            '<div class="infraction-date">' + (infraction.date || '') + '</div>' +
-          '</div>' +
-          '<div class="infraction-details">' +
-            'Points: ' + (infraction.points || 0) + ' | Lead: ' + (infraction.lead || 'Unknown') +
-          '</div>' +
-          '<div class="action-buttons">';
-        
-        if (canRequestGrace) {
-          html += '<button class="btn btn-grace" onclick="requestGrace(' + infraction.row + ')">Request Grace</button>';
-        }
-        
-        if (canAppeal) {
-          html += '<button class="btn btn-appeal" onclick="appealInfraction(' + infraction.row + ')">Appeal</button>';
-        }
-        
-        html += '</div></div>';
-      });
-      
-      container.innerHTML = html;
-    }
-    
-    function checkGraceEligibility(infraction) {
-      // Check if employee has sufficient grace balance for this infraction
-      return (infraction.points || 0) > 0; // Basic check - can be enhanced
-    }
-    
-    function requestGrace(infractionRow) {
-      currentInfractionId = infractionRow;
-      document.getElementById('grace-modal').style.display = 'block';
-    }
-    
-    function appealInfraction(infractionRow) {
-      currentInfractionId = infractionRow;
-      document.getElementById('appeal-modal').style.display = 'block';
-    }
-    
-    function closeModal() {
-      document.getElementById('grace-modal').style.display = 'none';
-      document.getElementById('appeal-modal').style.display = 'none';
-      currentInfractionId = null;
-    }
-    
-    // Form submissions
-    document.getElementById('grace-form').addEventListener('submit', function(e) {
-      e.preventDefault();
-      
-      const graceType = document.getElementById('grace-type').value;
-      const reason = document.getElementById('grace-reason').value;
-      
-      if (!graceType || !reason) {
-        alert('Please fill in all fields');
-        return;
-      }
-      
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result.success) {
-            alert('Grace request submitted successfully');
-            closeModal();
-            loadRecentInfractions(); // Refresh the list
+              .withSuccessHandler((user) => {
+                if (user) {
+                  state.session = session; 
+                  state.user = user;
+                  setQuerySession(session);
+                  const initial = token || ('dashboard:' + (user.role || 'employee'));
+                  render(initial);
+                } else {
+                  render('');
+                }
+              })
+              .withFailureHandler(() => render(''))
+              .getUserFromSession(session);
           } else {
-            alert('Error: ' + (result.error || 'Unknown error'));
+            render(token);
           }
-        })
-        .withFailureHandler(function(error) {
-          alert('Error submitting grace request: ' + error.message);
-        })
-        .submitGraceRequest(currentInfractionId, graceType, reason, '` + (user.email || '') + `');
-    });
-    
-    document.getElementById('appeal-form').addEventListener('submit', function(e) {
-      e.preventDefault();
-      
-      const explanation = document.getElementById('appeal-explanation').value;
-      
-      if (!explanation) {
-        alert('Please provide an explanation for your appeal');
-        return;
+          google.script.history.setChangeHandler((e) => render((e && e.token) || ''));
+        });
       }
-      
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result.success) {
-            alert('Appeal submitted successfully');
-            closeModal();
-            loadRecentInfractions(); // Refresh the list
-          } else {
-            alert('Error: ' + (result.error || 'Unknown error'));
-          }
-        })
-        .withFailureHandler(function(error) {
-          alert('Error submitting appeal: ' + error.message);
-        })
-        .submitInfractionAppeal(currentInfractionId, explanation, '` + (user.email || '') + `');
-    });
-    
-    function logout() {
-      window.location.href = window.location.href.split('?')[0];
-    }
-    
-    function showMessage(message, type) {
-      // Simple message display - can be enhanced
-      alert(message);
-    }
+
+      // Global functions for milestone assignment
+      window.assignDirector = function(row) {
+        const director = prompt('Enter director name:');
+        if (director) {
+          google.script.run
+            .withSuccessHandler(() => {
+              showMessage('Director assigned successfully', 'success');
+              loadPendingMilestones();
+            })
+            .withFailureHandler((err) => {
+              showMessage('Failed to assign director: ' + (err.message || err), 'error');
+            })
+            .assignMilestoneDirector(row, director);
+        }
+      };
+
+      bootstrap();
+    })();
   </script>
 </body>
 </html>
   `).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
-
-function renderEmployeeSearchPage(user, sessionId) {
-  return HtmlService.createHtmlOutputFromFile('employeeLookup')
-    .setTitle('CLEAR — Employee Search')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .setSandboxMode(HtmlService.SandboxMode.IFRAME);
-}
-
 
 /* ========= Auth: Passwords + OTP ========= */
 function loginWithPassword(email, password){
@@ -1841,9 +1254,9 @@ function loginWithPassword(email, password){
     const role = getUserRole(email);
     console.log('🎭 Role from getUserRole:', role);
     
-    console.log('📝 Calling createUserSession...');
+    console.log(' Calling createUserSession...');
     const sessionId = createUserSession(email); // Create session
-    console.log('🆔 Session created:', sessionId);
+    console.log(' Session created:', sessionId);
     
     const employee = resolveEmployeeName(email);
     console.log('👤 Employee name:', employee);
@@ -1879,7 +1292,6 @@ function resolveEmployeeName(email){
   return '';
 }
 
-
 function markLogin_(email){
   try{
     email = norm_(email);
@@ -1890,7 +1302,6 @@ function markLogin_(email){
     writeDirFields_(sh, r._row, { LastLogin: now_() });
   }catch(_){ /* no-op */ }
 }
-
 
 function requestSigninCode(email){
   email = norm_(email); if (!email) return {ok:false};
@@ -1912,6 +1323,7 @@ function requestCreateCode(email, employee){
   try { MailApp.sendEmail(email,'Verify your email','Your verification code: '+code+' (expires in '+AUTH.OTP_TTL_MIN+' minutes)'); } catch(_){ return {ok:false,error:'Mail failed'} }
   return {ok:true};
 }
+
 function completeCreate(email, code, newPass){
   try{
     email = String(email||'').trim().toLowerCase();
@@ -1940,7 +1352,6 @@ function completeCreate(email, code, newPass){
   }
 }
 
-
 /* Reset password — email code */
 function requestResetCode(email){
   email=norm_(email); if(!email) return {ok:false,error:'Enter email'};
@@ -1950,6 +1361,7 @@ function requestResetCode(email){
   try { MailApp.sendEmail(email,'CLEAR reset code','Reset code: '+code+' (expires in '+AUTH.RESET_TTL_MIN+' minutes)'); } catch(_){ return {ok:false,error:'Mail failed'} }
   return {ok:true};
 }
+
 function completeReset(email, code, newPass){
   email=norm_(email); const cached=CacheService.getScriptCache().get('reset:'+email);
   if (!cached || String(cached)!==String(code||'')) return {ok:false,error:'Invalid/expired code'};
@@ -2017,7 +1429,7 @@ function getMyOverviewForEmail(email){
   const employee = resolveEmployeeName(email);
   const out = { email, employee, effectivePoints:null, graceAvailable:null, graceAvailableText:null, rows:[], generatedAt:now_() };
   if (!employee) return out;
-  return getMyOverviewForEmployee_(employee);
+  return getEmployeeHistoryWithAppeals(email);
 }
 
 function getMyOverviewForEmployee_(employee){
@@ -2093,6 +1505,9 @@ function verifyHash_(password, salt, hash){
   return makeHash_(password, salt) === String(hash || '');
 }
 
+function fmtDate_(v,tz){ try{ if(v instanceof Date && !isNaN(v)) return Utilities.formatDate(v,tz,'yyyy-MM-dd'); const d=new Date(v); if(!isNaN(d)) return Utilities.formatDate(d,tz,'yyyy-MM-dd'); }catch(_){}
+  const s=String(v||''); return s.length>=10? s.slice(0,10) : s; }
+
 /* ========= OPTIONAL: directors-only helpers you can call from the Script editor ========= */
 // Send an invite (pre-seed/overwrite Directory row, email the user to create password)
 function adminInvite(email, employee, role){ return sendInvite(email, employee, role); }
@@ -2107,7 +1522,7 @@ function adminApprove(email, employee, role){
 
 function getUserRole(email) {
   email = norm_(email);
-  console.log('🔍 getUserRole called for email:', email);
+  console.log(' getUserRole called for email:', email);
   
   // Only check Directory sheet roles
   try {
@@ -2249,1113 +1664,241 @@ function getMonthlyEventsCount() {
 }
 
 function createUserSession(email) {
-  try {
-    console.log('🆔 Creating session for email:', email);
-    
-    const sessionId = Utilities.getUuid();
-    const userData = {
-      email: email,
-      role: getUserRole(email),
-      employee: resolveEmployeeName(email),
-      created: new Date().getTime()
-    };
-    
-    console.log('📋 Session data:', userData);
-    
-    // Store in cache with 6-hour expiration
-    const cacheKey = 'session:' + sessionId;
-  const cacheValue = JSON.stringify(userData);
+  const sessionId = Utilities.getUuid();
+  const userData = {
+    email: email,
+    role: getUserRole(email),
+    employee: resolveEmployeeName(email),
+    created: new Date().getTime()
+  };
   
+  // Store in cache with 6-hour expiration
   CacheService.getScriptCache().put(
-    cacheKey,
-    cacheValue,
+    'session:' + sessionId,
+    JSON.stringify(userData),
     6 * 60 * 60 // 6 hours
   );
-  // Persist to ScriptProperties as a fallback (helps immediately after creation)
-  try {
-    PropertiesService.getScriptProperties().setProperty(cacheKey, cacheValue);
-  } catch (_) {}
-    
-    // Verify the session was stored
-    const verify = CacheService.getScriptCache().get(cacheKey);
-    if (!verify) {
-      console.error('❌ Session storage failed');
-      throw new Error('Failed to store session');
-    }
-    
-    console.log('✅ Session created successfully:', sessionId);
-    return sessionId;
-    
-  } catch (error) {
-    console.error('💥 Error creating session:', error);
-    throw error;
-  }
-}
-
-// Safe session fetch: uses Cache first, then ScriptProperties fallback with TTL
-function getUserFromSessionSafe(sessionId) {
-  try {
-    console.log('Retrieving session (safe):', sessionId);
-    if (!sessionId) return null;
-
-    var cacheKey = 'session:' + sessionId;
-    var cached = CacheService.getScriptCache().get(cacheKey);
-    if (!cached) {
-      // Fallback: properties (in case cache has not propagated yet)
-      try {
-        cached = PropertiesService.getScriptProperties().getProperty(cacheKey);
-      } catch (_) {}
-      if (!cached) return null;
-    }
-
-    var userData = JSON.parse(cached);
-    // TTL enforcement (6 hours)
-    try {
-      if (userData && userData.created && (Date.now() - Number(userData.created)) > (6 * 60 * 60 * 1000)) {
-        return null;
-      }
-    } catch (_) {}
-    return userData;
-  } catch (err) {
-    console.error('Error retrieving session (safe):', err);
-    return null;
-  }
+  
+  return sessionId;
 }
 
 function getUserFromSession(sessionId) {
   try {
-    console.log('🔍 Retrieving session:', sessionId);
-    
-    if (!sessionId) {
-      console.log('❌ No sessionId provided');
-      return null;
-    }
-    
     const cached = CacheService.getScriptCache().get('session:' + sessionId);
-    if (!cached) {
-      console.log('❌ Session not found in cache');
-      return null;
-    }
+    if (!cached) return null;
     
-    const userData = JSON.parse(cached);
-    console.log('✅ Session retrieved for user:', userData.email);
-    return userData;
-    
+    return JSON.parse(cached);
   } catch (e) {
-    console.error('💥 Error retrieving session:', e);
     return null;
   }
 }
 
-// ---------- DEBUG FUNCTIONS ----------
-
-// Add this at the end of the file, before the existing debug functions
-
-function debugSessionFlow(sessionId) {
+// SPA: allow logout to invalidate a session server-side
+function logoutSession(sessionId) {
   try {
-    console.log('🔍 DEBUG: Session Flow Analysis for:', sessionId);
-    
-    if (!sessionId) {
-      console.log('❌ No sessionId provided');
-      return { error: 'No sessionId provided' };
-    }
-    
-    // Check cache
-    const cacheKey = 'session:' + sessionId;
-    const cacheData = CacheService.getScriptCache().get(cacheKey);
-    console.log('📦 Cache data found:', !!cacheData);
-    
-    // Check properties
-    const propsData = PropertiesService.getScriptProperties().getProperty(cacheKey);
-    console.log('📋 Properties data found:', !!propsData);
-    
-    let userData = null;
-    let source = 'none';
-    
-    if (cacheData) {
-      userData = JSON.parse(cacheData);
-      source = 'cache';
-    } else if (propsData) {
-      userData = JSON.parse(propsData);
-      source = 'properties';
-    }
-    
-    if (!userData) {
-      console.log('❌ No session data found in either cache or properties');
-      return { error: 'Session not found' };
-    }
-    
-    console.log('✅ Session found from:', source);
-    console.log('👤 User data:', {
-      email: userData.email,
-      role: userData.role,
-      employee: userData.employee,
-      created: new Date(userData.created).toLocaleString()
-    });
-    
-    // Check TTL
-    const now = Date.now();
-    const created = Number(userData.created);
-    const ttl = 6 * 60 * 60 * 1000; // 6 hours
-    const expired = (now - created) > ttl;
-    
-    console.log('⏰ Session age:', Math.round((now - created) / 1000 / 60), 'minutes');
-    console.log('💀 Session expired:', expired);
-    
-    // Validate user still exists
-    const userExists = !!getUserRole(userData.email);
-    console.log('👤 User still exists in directory:', userExists);
-    
-    return {
-      sessionId: sessionId,
-      found: true,
-      source: source,
-      userData: {
-        email: userData.email,
-        role: userData.role,
-        employee: userData.employee,
-        created: new Date(userData.created).toISOString()
-      },
-      age: Math.round((now - created) / 1000 / 60),
-      expired: expired,
-      userExists: userExists
-    };
-    
+    if (!sessionId) return false;
+    CacheService.getScriptCache().remove('session:' + sessionId);
+    return true;
   } catch (e) {
-    console.error('💥 debugSessionFlow error:', e);
-    return { error: e.toString() };
+    return false;
   }
 }
 
-function debugAuthenticationFlow(email) {
-  try {
-    console.log('🔐 DEBUG: Authentication Flow Analysis for:', email);
-    
-    email = norm_(email);
-    console.log('📧 Normalized email:', email);
-    
-    // Check directory
-    const row = getOrCreateDirRow_(email);
-    console.log('📋 Directory row:', row);
-    
-    if (!row || !row.Email) {
-      console.log('❌ Directory row not found');
-      return { error: 'Directory row not found' };
-    }
-    
-    // Check password hash
-    const hasPassword = !!(row.PassHash && row.PassHash.trim());
-    console.log('🔑 Has password hash:', hasPassword);
-    
-    // Check role
-    const role = getUserRole(email);
-    console.log('🎭 User role:', role);
-    
-    // Check verification status
-    const verified = row.Verified === true || String(row.Verified).toLowerCase() === 'true';
-    console.log('✅ User verified:', verified);
-    
-    // Check salt
-    const hasSalt = !!(row.Salt && row.Salt.trim());
-    console.log('🧂 Has salt:', hasSalt);
-    
-    // Test password verification if we have test data
-    let passwordTest = null;
-    if (hasPassword && hasSalt) {
-      try {
-        // This would need a known password to test - for debugging only
-        console.log('🔒 Password hash present and valid format');
-      } catch (e) {
-        console.log('❌ Password hash format issue:', e.message);
-      }
-    }
-    
-    return {
-      email: email,
-      directoryFound: true,
-      hasPassword: hasPassword,
-      hasSalt: hasSalt,
-      verified: verified,
-      role: role,
-      lastLogin: row.LastLogin,
-      createdAt: row.CreatedAt,
-      updatedAt: row.UpdatedAt
-    };
-    
-  } catch (e) {
-    console.error('💥 debugAuthenticationFlow error:', e);
-    return { error: e.toString() };
-  }
-}
+// Add these new functions after the existing backend functions
 
-function debugCacheStatus() {
-  try {
-    console.log('📦 DEBUG: Cache Status Analysis');
-    
-    const cache = CacheService.getScriptCache();
-    
-    // Get all cache keys (this is a bit hacky in GAS)
-    // We'll look for session keys specifically
-    const scriptProps = PropertiesService.getScriptProperties();
-    const allProps = scriptProps.getProperties();
-    
-    const sessionKeys = Object.keys(allProps).filter(key => key.startsWith('session:'));
-    console.log('🔑 Total session keys in properties:', sessionKeys.length);
-    
-    let activeSessions = 0;
-    let expiredSessions = 0;
-    let cacheHits = 0;
-    let cacheMisses = 0;
-    
-    sessionKeys.forEach(key => {
-      const sessionId = key.replace('session:', '');
-      const cacheData = cache.get(key);
-      const propsData = allProps[key];
-      
-      if (cacheData) {
-        cacheHits++;
-        try {
-          const userData = JSON.parse(cacheData);
-          const now = Date.now();
-          const created = Number(userData.created);
-          const ttl = 6 * 60 * 60 * 1000; // 6 hours
-          
-          if ((now - created) > ttl) {
-            expiredSessions++;
-          } else {
-            activeSessions++;
-          }
-        } catch (e) {
-          console.log('❌ Invalid session data in cache for:', sessionId);
-        }
-      } else {
-        cacheMisses++;
-        if (propsData) {
-          try {
-            const userData = JSON.parse(propsData);
-            const now = Date.now();
-            const created = Number(userData.created);
-            const ttl = 6 * 60 * 60 * 1000;
-            
-            if ((now - created) > ttl) {
-              expiredSessions++;
-            } else {
-              activeSessions++;
-            }
-          } catch (e) {
-            console.log('❌ Invalid session data in properties for:', sessionId);
-          }
-        }
-      }
-    });
-    
-    // Check OTP cache
-    const otpKeys = [];
-    // This is harder to enumerate in GAS cache
-    
-    console.log('📊 Session Summary:');
-    console.log('  - Active sessions:', activeSessions);
-    console.log('  - Expired sessions:', expiredSessions);
-    console.log('  - Cache hits:', cacheHits);
-    console.log('  - Cache misses:', cacheMisses);
-    
-    return {
-      activeSessions: activeSessions,
-      expiredSessions: expiredSessions,
-      cacheHits: cacheHits,
-      cacheMisses: cacheMisses,
-      totalSessionKeys: sessionKeys.length
-    };
-    
-  } catch (e) {
-    console.error('💥 debugCacheStatus error:', e);
-    return { error: e.toString() };
-  }
-}
-
-function debugDashboardLoad(email) {
-  try {
-    console.log('📊 DEBUG: Dashboard Load Analysis for:', email);
-    
-    email = norm_(email);
-    
-    // Time the operations
-    const startTime = Date.now();
-    
-    // Get user data
-    const user = {
-      email: email,
-      role: getUserRole(email),
-      employee: resolveEmployeeName(email)
-    };
-    
-    const userTime = Date.now();
-    console.log('👤 User data resolved in:', userTime - startTime, 'ms');
-    
-    // Get dashboard data
-    let dashboardData = null;
-    let dashboardTime = 0;
-    
-    if (user.role === 'director') {
-      dashboardData = getDirectorDashboardData();
-      dashboardTime = Date.now();
-      console.log('🎬 Director dashboard data loaded in:', dashboardTime - userTime, 'ms');
-    }
-    
-    // Get overview data
-    const overviewData = getMyOverviewForEmail(email);
-    const overviewTime = Date.now();
-    console.log('📈 Overview data loaded in:', overviewTime - (dashboardData ? dashboardTime : userTime), 'ms');
-    
-    const totalTime = Date.now() - startTime;
-    console.log('⏱️ Total dashboard load time:', totalTime, 'ms');
-    
-    return {
-      email: email,
-      user: user,
-      dashboardData: dashboardData,
-      overviewData: overviewData,
-      timings: {
-        userResolution: userTime - startTime,
-        dashboardLoad: dashboardData ? dashboardTime - userTime : 0,
-        overviewLoad: overviewTime - (dashboardData ? dashboardTime : userTime),
-        total: totalTime
-      }
-    };
-    
-  } catch (e) {
-    console.error('💥 debugDashboardLoad error:', e);
-    return { error: e.toString() };
-  }
-}
-
-function debugHtmlOutput() {
-  try {
-    console.log('🌐 DEBUG: HTML Output Analysis');
-    
-    const testUser = {
-      email: 'test@example.com',
-      role: 'employee',
-      employee: 'Test User'
-    };
-    
-    // Test login page
-    const loginPage = renderLoginPage();
-    console.log('📄 Login page rendered, length:', loginPage.getContent().length);
-    
-    // Test employee dashboard
-    const employeeDashboard = renderEmployeeDashboard(testUser);
-    console.log('👷 Employee dashboard rendered, length:', employeeDashboard.getContent().length);
-    
-    // Check for common issues
-    const loginHtml = loginPage.getContent();
-    const employeeHtml = employeeDashboard.getContent();
-    
-    const issues = [];
-    
-    // Check for unclosed tags
-    const unclosedTags = loginHtml.match(/<[^>]*$/g);
-    if (unclosedTags) {
-      issues.push('Unclosed tags in login page: ' + unclosedTags.length);
-    }
-    
-    // Check for JavaScript errors (but ignore normal error handling)
-    const jsErrors = loginHtml.match(/console\.error\([^)]*[^}]*\)/g);
-    if (jsErrors && jsErrors.length > 0) {
-      // Only count actual problematic console.error calls, not error handling
-      const problematicErrors = jsErrors.filter(error => !error.includes('result.error') && !error.includes('error.message'));
-      if (problematicErrors.length > 0) {
-        issues.push('Console errors in login page: ' + problematicErrors.length);
-      }
-    }
-    
-    // Check sandbox mode - since we set it in the renderLoginPage function,
-    // we can verify it was configured correctly by checking if the function exists
-    // and assume it's working since the HTML was generated successfully
-    const hasSandboxMode = true; // We set it in renderLoginPage()
-    if (!hasSandboxMode) {
-      issues.push('Sandbox mode configuration issue');
-    }
-    
-    // Check XFrame options - similarly, we know we set this
-    const hasXFrameOptions = true; // We set it in renderLoginPage()
-    if (!hasXFrameOptions) {
-      issues.push('XFrame options configuration issue');
-    }
-    
-    console.log('🔍 Issues found:', issues.length);
-    issues.forEach(issue => console.log('  -', issue));
-    
-    return {
-      loginPageLength: loginHtml.length,
-      employeeDashboardLength: employeeHtml.length,
-      issues: issues,
-      hasSandboxMode: hasSandboxMode,
-      hasXFrameOptions: hasXFrameOptions
-    };
-    
-  } catch (e) {
-    console.error('💥 debugHtmlOutput error:', e);
-    return { error: e.toString() };
-  }
-}
-
-function debugSheetStructure() {
-  try {
-    console.log('📊 DEBUG: Sheet Structure Analysis');
-    
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheets = ss.getSheets();
-    
-    console.log('📋 Total sheets:', sheets.length);
-    
-    const sheetInfo = sheets.map(sheet => {
-      const name = sheet.getName();
-      const rows = sheet.getLastRow();
-      const cols = sheet.getLastColumn();
-      
-      console.log(`📄 Sheet "${name}": ${rows} rows, ${cols} columns`);
-      
-      return {
-        name: name,
-        rows: rows,
-        columns: cols,
-        isHidden: sheet.isSheetHidden()
-      };
-    });
-    
-    // Check required sheets
-    const requiredSheets = ['Directory', 'Events', 'AccessRequests'];
-    const missingSheets = requiredSheets.filter(name => 
-      !sheets.some(sheet => sheet.getName() === name)
-    );
-    
-    if (missingSheets.length > 0) {
-      console.log('❌ Missing required sheets:', missingSheets);
-    } else {
-      console.log('✅ All required sheets present');
-    }
-    
-    // Check Directory sheet structure
-    const dirSheet = sheets.find(s => s.getName() === 'Directory');
-    if (dirSheet) {
-      const headers = dirSheet.getRange(1, 1, 1, dirSheet.getLastColumn()).getValues()[0];
-      console.log('🏷️ Directory headers:', headers);
-      
-      const expectedHeaders = DIR_COLS;
-      const missingHeaders = expectedHeaders.filter(h => !headers.includes(h));
-      
-      if (missingHeaders.length > 0) {
-        console.log('❌ Missing Directory headers:', missingHeaders);
-      } else {
-        console.log('✅ All Directory headers present');
-      }
-    }
-    
-    return {
-      totalSheets: sheets.length,
-      sheetInfo: sheetInfo,
-      missingSheets: missingSheets,
-      directoryHeaders: dirSheet ? dirSheet.getRange(1, 1, 1, dirSheet.getLastColumn()).getValues()[0] : null
-    };
-    
-  } catch (e) {
-    console.error('💥 debugSheetStructure error:', e);
-    return { error: e.toString() };
-  }
-}
-
-// ---------- DEBUG TEST SUITE ----------
-
-function runDebugSuite() {
-  try {
-    console.log('🚀 DEBUG SUITE: Starting comprehensive debug analysis...');
-    console.log('='.repeat(60));
-    
-    const results = {};
-    
-    // Test 1: Sheet structure
-    console.log('📊 TEST 1: Sheet Structure');
-    results.sheetStructure = debugSheetStructure();
-    console.log('✅ Sheet structure check complete\n');
-    
-    // Test 2: HTML output
-    console.log('🌐 TEST 2: HTML Output');
-    results.htmlOutput = debugHtmlOutput();
-    console.log('✅ HTML output check complete\n');
-    
-    // Test 3: Cache status
-    console.log('📦 TEST 3: Cache Status');
-    results.cacheStatus = debugCacheStatus();
-    console.log('✅ Cache status check complete\n');
-    
-    // Test 4: Current user
-    const currentUser = Session.getActiveUser().getEmail();
-    console.log('👤 TEST 4: Current User Analysis -', currentUser);
-    results.userDirectory = debugUserDirectory(currentUser);
-    results.authFlow = debugAuthenticationFlow(currentUser);
-    console.log('✅ User analysis complete\n');
-    
-    // Test 5: Dashboard load (if user has role)
-    const userRole = getUserRole(currentUser);
-    if (userRole) {
-      console.log('📊 TEST 5: Dashboard Load Test');
-      results.dashboardLoad = debugDashboardLoad(currentUser);
-      console.log('✅ Dashboard load test complete\n');
-    }
-    
-    console.log('='.repeat(60));
-    console.log('🎯 DEBUG SUITE: Analysis complete!');
-    
-    return results;
-    
-  } catch (e) {
-    console.error('💥 Debug suite error:', e);
-    return { error: e.toString() };
-  }
-}
-
-// ---------- QUICK DEBUG FUNCTIONS ----------
-
-function debugCurrentSession() {
-  // Get current session from URL parameters (client-side helper)
-  const urlParams = new URLSearchParams(window.location.search);
-  const sessionId = urlParams.get('session');
-  
-  if (!sessionId) {
-    console.log('❌ No session parameter in URL');
-    return { error: 'No session parameter' };
-  }
-  
-  return debugSessionFlow(sessionId);
-}
-
-function debugLastError() {
-  // This would need to be enhanced with proper error tracking
-  console.log('🔍 DEBUG: Last error analysis');
-  
-  // Check recent execution logs
-  try {
-    const logs = Logger.getLog();
-    console.log('📋 Recent logs:', logs);
-    return { logs: logs };
-  } catch (e) {
-    console.log('❌ Could not retrieve logs:', e);
-    return { error: e.toString() };
-  }
-}
-
-// ---------- CLIENT-SIDE DEBUG HELPER ----------
-// Add this to your HTML templates for client-side debugging
-/*
-<script>
-function clientDebug() {
-  console.log('🖥️ CLIENT DEBUG: Starting client-side analysis...');
-  
-  // Check session parameter
-  const urlParams = new URLSearchParams(window.location.search);
-  const sessionId = urlParams.get('session');
-  console.log('🔑 Session ID from URL:', sessionId);
-  
-  // Check for common DOM issues
-  const missingElements = [];
-  const requiredIds = ['content-area', 'logoutBtn'];
-  
-  requiredIds.forEach(id => {
-    if (!document.getElementById(id)) {
-      missingElements.push(id);
-    }
-  });
-  
-  if (missingElements.length > 0) {
-    console.log('❌ Missing DOM elements:', missingElements);
-  } else {
-    console.log('✅ All required DOM elements present');
-  }
-  
-  // Check JavaScript errors
-  window.addEventListener('error', function(e) {
-    console.error('💥 JavaScript error:', e.error);
-  });
-  
-  return {
-    sessionId: sessionId,
-    missingElements: missingElements,
-    userAgent: navigator.userAgent
-  };
-}
-
-// Auto-run client debug
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', clientDebug);
-} else {
-  clientDebug();
-}
-</script>
-*/
-
-// Make debugging functions available to web app
-function debugSession() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const sessionId = urlParams.get('session');
-  return debugSessionFlow(sessionId);
-}
-
-function debugUserDirectory(email) {
-  try {
-    console.log('🔍 DEBUG: Checking Directory for email:', email);
-    
-    email = norm_(email);
-    console.log('📧 Normalized email:', email);
-    
-    const sh = dir_();
-    if (!sh) {
-      console.log('❌ Directory sheet not found');
-      return { error: 'Directory sheet not found' };
-    }
-    
-    const map = readDirMap_(sh);
-    console.log('📋 Full Directory map keys:', Object.keys(map));
-    
-    const user = map[email];
-    console.log('👤 User data from Directory:', user);
-    
-    if (user) {
-      console.log('📝 User details:');
-      console.log('  - Email:', user.Email);
-      console.log('  - Employee:', user.Employee);
-      console.log('  - Role:', user.Role);
-      console.log('  - Verified:', user.Verified);
-      console.log('  - Row number:', user._row);
-      
-      // Test getUserRole
-      console.log('🎯 Testing getUserRole...');
-      const role = getUserRole(email);
-      console.log('🎭 getUserRole result:', role);
-      
-      return {
-        found: true,
-        email: user.Email,
-        employee: user.Employee,
-        role: user.Role,
-        verified: user.Verified,
-        row: user._row,
-        getUserRoleResult: role
-      };
-    } else {
-      console.log('❌ User not found in Directory');
-      
-      // Check if Directory has any data
-      const data = sh.getDataRange().getValues();
-      console.log('📊 Directory sheet has', data.length - 1, 'rows of data');
-      
-      if (data.length > 1) {
-        console.log('📋 First few Directory entries:');
-        for (let i = 1; i < Math.min(6, data.length); i++) {
-          console.log('  Row', i + 1, ':', data[i][0], '|', data[i][1], '|', data[i][2]);
-        }
-      }
-      
-      return { 
-        found: false, 
-        directorySize: data.length - 1,
-        sampleData: data.slice(1, Math.min(6, data.length)).map(row => ({
-          email: row[0],
-          employee: row[1], 
-          role: row[2]
-        }))
-      };
-    }
-  } catch (e) {
-    console.log('💥 debugUserDirectory error:', e);
-    return { error: e.toString() };
-  }
-}
-
-// Make this function available to the web app
-function testUserDirectory() {
-  const email = Session.getActiveUser().getEmail();
-  return debugUserDirectory(email);
-}
-
-// Add this server-side function to return dashboard HTML
-function getDashboardHtml(sessionId) {
-  try {
-    console.log('🔍 Getting dashboard HTML for session:', sessionId);
-    
-    const user = getUserFromSessionSafe(sessionId);
-    if (!user || !user.email || !user.role) {
-      console.log('❌ Invalid session or user data');
-      return '<h1>Error</h1><p>Invalid session. Please log in again.</p>';
-    }
-    
-    console.log('✅ Valid session found for user:', user.email, 'role:', user.role);
-    
-    // Route to appropriate dashboard
-    switch((user.role || '').toLowerCase().trim()) {
-      case 'director':
-        console.log('🎬 Returning director dashboard HTML');
-        return renderDirectorDashboard(user).getContent();
-      case 'lead':
-        console.log('👥 Returning lead dashboard HTML');
-        return renderLeadDashboard(user).getContent();
-      case 'employee':
-      default:
-        console.log('👷 Returning employee dashboard HTML');
-        return renderEmployeeDashboard(user).getContent();
-    }
-  } catch (error) {
-    console.error('💥 Error in getDashboardHtml:', error);
-    return '<h1>Error</h1><p>' + error.message + '</p>';
-  }
-}
-
-// ---------- EMPLOYEE DASHBOARD FUNCTIONS ----------
-
-// Get employee dashboard data (points, grace balance, active infractions)
-function getEmployeeDashboardData(email) {
+function getActiveMilestone(email) {
   try {
     const employee = resolveEmployeeName(email);
-    if (!employee) {
-      return { currentPoints: 0, graceBalance: 0, activeInfractions: 0 };
-    }
+    if (!employee) return null;
     
-    // Get current points (effective rolling points)
-    const overview = getMyOverviewForEmployee_(employee);
-    const currentPoints = overview.effectivePoints || 0;
-    
-    // Get grace balance from PositivePoints
-    const graceBalance = getEmployeeGraceBalance(employee);
-    
-    // Get active infractions count
-    const activeInfractions = getActiveInfractionsCount(employee);
-    
-    return {
-      currentPoints: currentPoints,
-      graceBalance: graceBalance,
-      activeInfractions: activeInfractions
-    };
-  } catch (e) {
-    console.error('getEmployeeDashboardData error:', e);
-    return { currentPoints: 0, graceBalance: 0, activeInfractions: 0 };
-  }
-}
-
-// Get employee's available grace balance
-function getEmployeeGraceBalance(employee) {
-  try {
-    const sh = getPositivePointsSheet();
-    if (!sh) return 0;
-    
-    const data = sh.getDataRange().getValues();
-    let balance = 0;
-    
-    // Find available (unused) positive credits for this employee
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      const emp = row[1]; // Employee column
-      const consumed = String(row[4] || '').toLowerCase(); // Consumed? column
-      
-      if (String(emp).trim() === String(employee).trim() && 
-          consumed !== 'true' && consumed !== 'y' && consumed !== '1') {
-        const points = Number(row[2] || 0); // Points/Value column
-        if (!isNaN(points)) {
-          balance += points;
-        }
-      }
-    }
-    
-    return balance;
-  } catch (e) {
-    console.error('getEmployeeGraceBalance error:', e);
-    return 0;
-  }
-}
-
-// Get count of active infractions
-function getActiveInfractionsCount(employee) {
-  try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const eventsSheet = ss.getSheetByName('Events');
-    if (!eventsSheet) return 0;
+    if (!eventsSheet) return null;
     
     const data = eventsSheet.getDataRange().getValues();
-    let count = 0;
+    const headers = data[0];
+    
+    const employeeCol = headers.indexOf('Employee');
+    const activeCol = headers.indexOf('Active');
+    const milestoneCol = headers.indexOf('Milestone');
+    const consequenceCol = headers.indexOf('Consequence');
     
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      const emp = row[2]; // Employee column (adjust index as needed)
-      
-      if (String(emp).trim().toLowerCase() === String(employee).trim().toLowerCase()) {
-        const points = Number(row[6] || 0); // Points column (adjust index as needed)
-        if (points > 0) {
-          count++;
-        }
+      if (String(row[employeeCol] || '').trim().toLowerCase() === employee.toLowerCase() &&
+          String(row[activeCol] || '').toLowerCase() === 'true') {
+        return {
+          milestone: row[milestoneCol] || '',
+          consequence: row[consequenceCol] || '',
+          row: i + 1
+        };
       }
     }
     
-    return count;
+    return null;
   } catch (e) {
-    console.error('getActiveInfractionsCount error:', e);
-    return 0;
+    Logger.log('getActiveMilestone error: ' + e);
+    return null;
   }
 }
 
-// Get employee's recent infractions
-function getEmployeeInfractions(email) {
+function getGraceCredits(email) {
   try {
     const employee = resolveEmployeeName(email);
     if (!employee) return [];
     
-    const overview = getMyOverviewForEmployee_(employee);
-    const infractions = [];
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const positivePointsSheet = ss.getSheetByName('PositivePoints');
+    if (!positivePointsSheet) return [];
     
-    // Get recent infractions (last 10)
-    if (overview.rows && overview.rows.length > 0) {
-      overview.rows.slice(0, 10).forEach(function(row, index) {
-        if (row.points && row.points > 0) { // Only disciplinary events
-          infractions.push({
-            row: index + 2, // Approximate row number
-            date: row.date,
-            infraction: row.infraction || row.event,
-            points: row.points,
-            lead: row.lead || '',
-            notes: row.notes || ''
-          });
-        }
-      });
+    const data = positivePointsSheet.getDataRange().getValues();
+    const headers = data[0];
+    
+    const employeeCol = headers.indexOf('Employee');
+    const creditReasonCol = headers.indexOf('Credit Reason');
+    const dateCol = headers.indexOf('Date');
+    const pointsCol = headers.indexOf('Points');
+    
+    const credits = [];
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (String(row[employeeCol] || '').trim().toLowerCase() === employee.toLowerCase()) {
+        credits.push({
+          reason: row[creditReasonCol] || '',
+          date: row[dateCol] || '',
+          points: row[pointsCol] || 0,
+          row: i + 1
+        });
+      }
     }
     
-    return infractions;
+    return credits;
   } catch (e) {
-    console.error('getEmployeeInfractions error:', e);
+    Logger.log('getGraceCredits error: ' + e);
     return [];
   }
 }
 
-// Submit grace request (FIXED - using CONFIG.COLS pattern)
-function submitGraceRequest(infractionRow, graceType, reason, email) {
+function getEmployeeHistoryWithAppeals(email) {
   try {
     const employee = resolveEmployeeName(email);
-    if (!employee) {
-      return { success: false, error: 'Employee not found' };
-    }
+    if (!employee) return { rows: [], generatedAt: now_() };
     
-    // Create grace request entry in Events sheet using proper CONFIG.COLS pattern
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const eventsSheet = ss.getSheetByName(CONFIG.TABS.EVENTS);
-    if (!eventsSheet) {
-      return { success: false, error: 'Events sheet not found' };
-    }
+    const eventsSheet = ss.getSheetByName('Events');
+    if (!eventsSheet) return { rows: [], generatedAt: now_() };
     
-    // Use the same pattern as appendMilestoneRow_
-    const hdrs = headers_(eventsSheet);
-    function reload(){ hdrs = headers_(eventsSheet); }
-    function findHeader(name){ var idx = hdrs.indexOf(name); return idx >= 0 ? (idx+1) : 0; }
-    function ensureCol(name, aliases){
-      var c = findHeader(name);
-      if (c) return c;
-      (aliases||[]).some(function(a){ c = findHeader(a); return !!c; });
-      if (c) return c;
-      // create at end
-      var newCol = eventsSheet.getLastColumn() + 1;
-      eventsSheet.getRange(1, newCol).setValue(name);
-      reload();
-      return newCol;
-    }
-    
-    // Ensure required columns exist
-    var cTimestamp       = ensureCol(CONFIG.COLS.Timestamp, ['Timestamp']);
-    var cIncidentDate    = ensureCol(CONFIG.COLS.IncidentDate, ['IncidentDate','Incident Date','Date']);
-    var cEmployee        = ensureCol(CONFIG.COLS.Employee, ['Employee']);
-    var cLead            = ensureCol(CONFIG.COLS.Lead || 'Lead', ['Lead']);
-    var cEventType       = ensureCol(CONFIG.COLS.EventType, ['EventType','Event Type']);
-    var cPendingStatus   = ensureCol(CONFIG.COLS.PendingStatus || 'Pending Status', ['PendingStatus']);
-    var cConsequenceDir  = ensureCol(CONFIG.COLS.ConsequenceDirector || 'Consequence Director', ['ConsequenceDirector']);
-    var cInfraction      = ensureCol(CONFIG.COLS.Infraction, ['Infraction']);
-    var cIncidentDesc    = ensureCol(CONFIG.COLS.IncidentDescription || 'IncidentDescription', ['IncidentDescription','Incident Description']);
-    var cPoints          = ensureCol(CONFIG.COLS.Points, ['Points']);
-    var cLinkedEventId   = ensureCol(CONFIG.COLS.Linked_Event_ID || CONFIG.COLS.LinkedEventID || 'Linked Event ID', ['LinkedEventID','Linked Event Row','LinkedEventRow']);
-    var cGraceRequestStatus = ensureCol('Grace Request Status', ['GraceRequestStatus']); // New column
-    
-    // Find next available row
-    var lastRow = eventsSheet.getLastRow();
-    var targetRow = null;
-    if (lastRow >= 2) {
-      var tsCol = cTimestamp;
-      var tsValues = eventsSheet.getRange(2, tsCol, lastRow - 1, 1).getValues();
-      for (var i = 0; i < tsValues.length; i++) {
-        if (!tsValues[i][0]) {
-          targetRow = 2 + i;
-          break;
-        }
+    const hdr = eventsSheet.getRange(1,1,1,eventsSheet.getLastColumn()).getValues()[0].map(h=>String(h||'').trim());
+    const idx = n => hdr.indexOf(n);
+    const iEmp=idx('Employee'), iDate=firstIdx_(hdr,['IncidentDate','Date','Timestamp']);
+    const iEvt=idx('EventType'), iInf=idx('Infraction'), iLead=idx('Lead');
+    const iPts=idx('Points'), iRollE=idx('PointsRolling (Effective)'), iRoll=idx('PointsRolling');
+    const iNotes=firstIdx_(hdr,['Notes / Reviewer','Notes','Reviewer','Notes/Reviewer']);
+    const iPdf=firstIdx_(hdr,['Write-Up PDF','PDF Link','WriteUpPDF','Signed_PDF_Link']);
+    const iActive=idx('Active');
+    const iConsequence=idx('Consequence');
+    const iGraceReason=idx('Grace Reason');
+    const tz=Session.getScriptTimeZone()||'UTC';
+
+    const vals=eventsSheet.getDataRange().getValues(); const rows=[]; let lastEff=null;
+    for (let r=1;r<vals.length;r++){
+      if (String(vals[r][iEmp]||'').trim().toLowerCase()!==String(employee).trim().toLowerCase()) continue;
+      let roll=null; if(iRollE!==-1&&isFinite(Number(vals[r][iRollE]))) roll=Number(vals[r][iRollE]); else if(iRoll!==-1&&isFinite(Number(vals[r][iRoll]))) roll=Number(vals[r][iRoll]);
+      if (roll!=null) lastEff=roll;
+      
+      const eventType = String(vals[r][iEvt]||'');
+      let eventDisplay = '';
+      
+      // Determine what to show in the Event column
+      if (eventType.toLowerCase() === 'disciplinary event') {
+        eventDisplay = String(vals[r][iInf]||'');
+      } else if (eventType.toLowerCase() === 'milestone') {
+        eventDisplay = String(vals[r][iConsequence]||'');
+      } else if (eventType.toLowerCase() === 'grace') {
+        eventDisplay = String(vals[r][iGraceReason]||'');
+      } else {
+        eventDisplay = eventType; // fallback to event type
       }
+      
+      rows.push({
+        date:fmtDate_(vals[r][iDate],tz),
+        event: eventDisplay,
+        eventType: eventType,
+        infraction:String(vals[r][iInf]||''),
+        notes:(iNotes!==-1)?String(vals[r][iNotes]||''):'',
+        points:(iPts!==-1 && vals[r][iPts]!=='' && vals[r][iPts]!=null)?Number(vals[r][iPts]):null,
+        roll:roll,
+        lead:String(vals[r][iLead]||''),
+        pdfUrl:(iPdf!==-1)?String(vals[r][iPdf]||''):'',
+        active: String(vals[r][iActive]||'').toLowerCase() === 'true',
+        row: r + 1
+      });
     }
-    if (!targetRow) {
-      targetRow = Math.max(2, lastRow + 1);
-      eventsSheet.insertRowAfter(Math.max(1, lastRow));
-    }
-    
-    // Create grace request row data
-    var now = new Date();
-    var graceData = [];
-    var maxCol = Math.max(cTimestamp, cIncidentDate, cEmployee, cLead, cEventType, 
-                         cPendingStatus, cConsequenceDir, cInfraction, cIncidentDesc, 
-                         cPoints, cLinkedEventId, cGraceRequestStatus);
-    
-    // Initialize all columns to empty
-    for (var i = 0; i < maxCol; i++) {
-      graceData[i] = '';
-    }
-    
-    // Set grace request data using proper column indices
-    graceData[cTimestamp - 1] = now;
-    graceData[cIncidentDate - 1] = now;
-    graceData[cEmployee - 1] = employee;
-    graceData[cLead - 1] = 'Employee Portal';
-    graceData[cEventType - 1] = 'Grace Request';
-    graceData[cPendingStatus - 1] = 'Pending';
-    graceData[cConsequenceDir - 1] = 'Unassigned';
-    graceData[cInfraction - 1] = 'Grace Request - ' + graceType;
-    graceData[cIncidentDesc - 1] = reason;
-    graceData[cPoints - 1] = 0;
-    graceData[cLinkedEventId - 1] = infractionRow;
-    graceData[cGraceRequestStatus - 1] = 'pending';
-    
-    // Write the row
-    eventsSheet.getRange(targetRow, 1, 1, maxCol).setValues([graceData]);
-    
-    return { success: true, message: 'Grace request submitted successfully' };
-    
+    return { employee, rows, effectivePoints:(lastEff!=null)?lastEff:null, graceAvailable:null, graceAvailableText:null, generatedAt:now_() };
   } catch (e) {
-    console.error('submitGraceRequest error:', e);
-    return { success: false, error: e.toString() };
+    Logger.log('getEmployeeHistoryWithAppeals error: ' + e);
+    return { rows: [], generatedAt: now_() };
   }
 }
 
-// Submit infraction appeal (SIMPLIFIED VERSION)
-function submitInfractionAppeal(infractionRow, explanation, email) {
+function submitAppeal(email, row, appealReason) {
   try {
     const employee = resolveEmployeeName(email);
-    if (!employee) {
-      return { success: false, error: 'Employee not found' };
-    }
+    if (!employee) return { success: false, error: 'Employee not found' };
     
-    // Create appeal entry in Events sheet using minimal columns
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const eventsSheet = ss.getSheetByName(CONFIG.TABS.EVENTS);
-    if (!eventsSheet) {
-      return { success: false, error: 'Events sheet not found' };
+    const eventsSheet = ss.getSheetByName('Events');
+    if (!eventsSheet) return { success: false, error: 'Events sheet not found' };
+    
+    const data = eventsSheet.getDataRange().getValues();
+    const headers = data[0];
+    
+    const employeeCol = headers.indexOf('Employee');
+    const eventTypeCol = headers.indexOf('EventType');
+    const activeCol = headers.indexOf('Active');
+    
+    // Verify this is an active disciplinary event for this employee
+    const rowData = data[row - 1];
+    if (String(rowData[employeeCol] || '').trim().toLowerCase() !== employee.toLowerCase()) {
+      return { success: false, error: 'Event not found for this employee' };
     }
     
-    // Use the same pattern as appendMilestoneRow_
-    const hdrs = headers_(eventsSheet);
-    function reload(){ hdrs = headers_(eventsSheet); }
-    function findHeader(name){ var idx = hdrs.indexOf(name); return idx >= 0 ? (idx+1) : 0; }
-    function ensureCol(name, aliases){
-      var c = findHeader(name);
-      if (c) return c;
-      (aliases||[]).some(function(a){ c = findHeader(a); return !!c; });
-      if (c) return c;
-      // create at end
-      var newCol = eventsSheet.getLastColumn() + 1;
-      eventsSheet.getRange(1, newCol).setValue(name);
-      reload();
-      return newCol;
+    if (String(rowData[eventTypeCol] || '').toLowerCase() !== 'disciplinary event') {
+      return { success: false, error: 'Only disciplinary events can be appealed' };
     }
     
-    // Ensure only the required columns exist
-    var cTimestamp       = ensureCol(CONFIG.COLS.Timestamp, ['Timestamp']);
-    var cIncidentDate    = ensureCol(CONFIG.COLS.IncidentDate, ['IncidentDate','Incident Date','Date']);
-    var cEmployee        = ensureCol(CONFIG.COLS.Employee, ['Employee']);
-    var cEventType       = ensureCol(CONFIG.COLS.EventType, ['EventType','Event Type']);
-    var cLinkedEventId   = ensureCol(CONFIG.COLS.Linked_Event_ID || CONFIG.COLS.LinkedEventID || 'Linked Event ID', ['LinkedEventID','Linked Event Row','LinkedEventRow']);
-    var cAppealStatus    = ensureCol('Appeal Status', ['AppealStatus']);
-    var cAppealExplanation = ensureCol('Appeal Explanation', ['AppealExplanation']);
+    if (String(rowData[activeCol] || '').toLowerCase() !== 'true') {
+      return { success: false, error: 'Only active events can be appealed' };
+    }
     
-    // Find next available row
-    var lastRow = eventsSheet.getLastRow();
-    var targetRow = null;
-    if (lastRow >= 2) {
-      var tsCol = cTimestamp;
-      var tsValues = eventsSheet.getRange(2, tsCol, lastRow - 1, 1).getValues();
-      for (var i = 0; i < tsValues.length; i++) {
-        if (!tsValues[i][0]) {
-          targetRow = 2 + i;
-          break;
-        }
+    // Set Active to FALSE (effectively canceling the milestone)
+    eventsSheet.getRange(row, activeCol + 1).setValue('FALSE');
+    
+    // Add appeal reason to notes or create an appeal log
+    const notesCol = headers.indexOf('Notes / Reviewer');
+    if (notesCol !== -1) {
+      const currentNotes = String(rowData[notesCol] || '');
+      const newNotes = currentNotes + (currentNotes ? '\n' : '') + `APPEAL: ${appealReason}`;
+      eventsSheet.getRange(row, notesCol + 1).setValue(newNotes);
+    }
+    
+    // Notify directors
+    const directorEmails = getDirectorEmails();
+    if (directorEmails.length > 0) {
+      try {
+        MailApp.sendEmail(
+          directorEmails.join(','), 
+          'CLEAR Appeal Submitted', 
+          `${employee} has appealed a disciplinary event.\n\nAppeal Reason: ${appealReason}\n\nEvent Row: ${row}`
+        );
+      } catch (e) {
+        Logger.log('Failed to send appeal notification: ' + e);
       }
-    }
-    if (!targetRow) {
-      targetRow = Math.max(2, lastRow + 1);
-      eventsSheet.insertRowAfter(Math.max(1, lastRow));
-    }
-    
-    // Create minimal appeal row data - only fill required columns
-    var now = new Date();
-    var appealData = [];
-    var maxCol = Math.max(cTimestamp, cIncidentDate, cEmployee, cEventType, 
-                         cLinkedEventId, cAppealStatus, cAppealExplanation);
-    
-    // Initialize all columns to empty (this avoids validation issues)
-    for (var i = 0; i < maxCol; i++) {
-      appealData[i] = '';
-    }
-    
-    // Only set the specific columns you mentioned
-    appealData[cTimestamp - 1] = now;                    // Timestamp
-    appealData[cIncidentDate - 1] = now;                 // IncidentDate  
-    appealData[cEmployee - 1] = employee;                // Employee
-    appealData[cEventType - 1] = 'Appeal';              // EventType
-    appealData[cLinkedEventId - 1] = infractionRow;     // Linked_Event_ID
-    appealData[cAppealStatus - 1] = 'Pending';          // Appeal Status
-    appealData[cAppealExplanation - 1] = explanation;   // Appeal Explanation
-    
-    // Write the row
-    eventsSheet.getRange(targetRow, 1, 1, maxCol).setValues([appealData]);
-    
-    // Send Slack notification to directors
-    try {
-      sendAppealNotification(employee, infractionRow, explanation);
-    } catch (slackError) {
-      console.error('Slack notification failed:', slackError);
-      // Don't fail the appeal if Slack fails
     }
     
     return { success: true, message: 'Appeal submitted successfully' };
-    
   } catch (e) {
-    console.error('submitInfractionAppeal error:', e);
-    return { success: false, error: e.toString() };
-  }
-}
-
-// Send Slack notification for appeal
-function sendAppealNotification(employee, infractionRow, explanation) {
-  try {
-    if (!CONFIG.LEADERS_WEBHOOK) {
-      console.log('No Slack webhook configured for leaders');
-      return;
-    }
-    
-    const message = {
-      text: `:bell: *New Infraction Appeal* from *${employee}*\n` +
-            `Original Infraction: Row ${infractionRow}\n` +
-            `Explanation: ${explanation}\n` +
-            `Status: Pending Review`,
-      mrkdwn: true
-    };
-    
-    const response = UrlFetchApp.fetch(CONFIG.LEADERS_WEBHOOK, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify(message),
-      muteHttpExceptions: true
-    });
-    
-    console.log('Appeal Slack notification sent, response code:', response.getResponseCode());
-    
-  } catch (e) {
-    console.error('sendAppealNotification error:', e);
+    Logger.log('submitAppeal error: ' + e);
+    return { success: false, error: 'Failed to submit appeal: ' + e.toString() };
   }
 }
