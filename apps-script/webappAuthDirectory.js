@@ -69,49 +69,53 @@ function fmtDate_(dateValue, timezone) {
 function doGet(e){
   try {
     console.log('🚀 doGet called with parameters:', e);
-    
-    const sessionId = e.parameter.session;
+
+    const params = (e && e.parameter) || {};
+    const page = params.page;
+    const sessionId = params.session;
     console.log('🎫 Session ID:', sessionId);
-    
-    if (!sessionId) {
-      console.log('❌ No session parameter, rendering login page');
+
+    const user = sessionId ? getUserFromSession(sessionId) : null;
+    console.log('👤 User from session:', user);
+
+    const pageMap = {
+      login: renderLoginPage,
+      director: () => renderDirectorDashboard(user, sessionId),
+      lead: () => renderLeadDashboard(user, sessionId),
+      employee: () => renderEmployeeDashboard(user, sessionId),
+      employeeSearch: () => renderEmployeeSearchPage(user, sessionId)
+    };
+
+    if (!user && page !== 'login') {
+      console.log('❌ No user found, rendering login page');
       return renderLoginPage();
     }
-    
-    console.log('🔍 Attempting to retrieve session...');
-    const user = getUserFromSessionSafe(sessionId);
-    console.log('👤 User from session:', JSON.stringify(user));
-    
+
+    if (page && pageMap[page]) {
+      console.log('📄 Rendering page:', page);
+      return pageMap[page]();
+    }
+
     if (!user) {
-      console.log('❌ No user found for session, checking cache directly...');
-      
-      // Debug: Check cache directly
-      const cacheKey = 'session:' + sessionId;
-      const directCache = CacheService.getScriptCache().get(cacheKey);
-      console.log('📦 Direct cache check:', directCache ? 'Found' : 'Not found');
-      
-      if (directCache) {
-        console.log('📋 Direct cache data:', directCache);
-      }
-      
-      // Debug: Check properties
-      const propsData = PropertiesService.getScriptProperties().getProperty(cacheKey);
-      console.log('📋 Properties data:', propsData ? 'Found' : 'Not found');
-      
-      console.log('❌ Rendering login page due to missing session');
+      console.log('❌ No user after page check, rendering login');
       return renderLoginPage();
     }
-    
-    // Validate user data
-    if (!user.email) {
-      console.log('❌ Invalid user data:', { email: user.email });
-      return renderLoginPage();
+
+    console.log('🎯 User role:', user.role);
+
+    // Route based on user role
+    switch(user.role) {
+      case 'director':
+        console.log('🎬 Rendering director dashboard');
+        return renderDirectorDashboard(user, sessionId);
+      case 'lead':
+        console.log('👥 Rendering lead dashboard');
+        return renderLeadDashboard(user, sessionId);
+      case 'employee':
+      default:
+        console.log('👷 Rendering employee dashboard');
+        return renderEmployeeDashboard(user, sessionId);
     }
-    
-    console.log('🎯 User authenticated, routing to employee dashboard');
-    
-    // ALL USERS NOW GO TO EMPLOYEE DASHBOARD
-    return renderEmployeeDashboard(user);
   } catch (error) {
     console.log('💥 Error in doGet:', error);
     return HtmlService.createHtmlOutput('<h1>Error</h1><p>' + error + '</p>');
@@ -482,13 +486,14 @@ function renderLoginPage() {
       google.script.run
         .withSuccessHandler(function(result) {
           if (result.ok) {
-            showMsg('signin-msg', 'Login successful! Loading dashboard...', 'success');
-            console.log('🔑 Login successful, sessionId:', result.sessionId);
-            
-            setTimeout(function() {
-              loadDashboardAfterLogin(result.sessionId);
-            }, 500);
-            
+            showMsg('Login successful! Redirecting...', 'success');
+            const base = window.location.href.split('?')[0];
+            google.script.run
+              .withSuccessHandler(() => {
+                google.script.host.close();
+                window.open(base + '?session=' + result.sessionId, '_top');
+              })
+              .closeAndReopenWithSession(result.sessionId);
           } else {
             showMsg('signin-msg', result.error || 'Login failed', 'error');
             btn.disabled = false;
@@ -767,7 +772,7 @@ function closeAndReopenWithSession(sessionId) {
 }
 
 // Add this function to handle different dashboard types
-function renderDirectorDashboard(user) {
+function renderDirectorDashboard(user, sessionId) {
   return HtmlService.createHtmlOutput(`
 <!DOCTYPE html>
 <html>
@@ -1270,329 +1275,129 @@ function renderDirectorDashboard(user) {
           </div>
         </div>
         
-        <!-- Recent Activity -->
-        <div class="content-section">
-          <div class="section-header">
-            <h2 class="section-title">Recent Milestones</h2>
-            <div class="section-actions">
-              <button class="btn-secondary" onclick="refreshData()">Refresh</button>
-              <button class="btn-secondary" onclick="showAllMilestones()">View All</button>
-            </div>
-          </div>
-          
-          <div id="recent-milestones">
-            <div class="loading">
-              <div class="loading-spinner"></div>
-              Loading recent milestones...
-            </div>
-          </div>
+        <div id="pending-milestones-list">
+          <!-- Dynamic content loaded here -->
         </div>
       </div>
       
-      <!-- Employee Search Tab -->
-      <div id="employees" class="tab-content">
-        <div class="content-section">
-          <div class="section-header">
-            <h2 class="section-title">Employee Directory</h2>
-          </div>
-          
-          <div style="max-width: 600px; margin: 0 auto;">
-            <input type="text" id="employeeSearch" placeholder="Search by name or email..." 
-                   style="width: 100%; padding: 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 16px; margin-bottom: 20px;">
-            <button onclick="searchEmployees()" 
-                    style="width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">
-              Search Employees
-            </button>
-          </div>
-          
-          <div id="employeeResults"></div>
-        </div>
-      </div>
-      
-      <!-- Milestones Tab -->
-      <div id="milestones" class="tab-content">
-        <div class="content-section">
-          <div class="section-header">
-            <h2 class="section-title">Pending Milestones</h2>
-            <div class="section-actions">
-              <button class="btn-secondary" onclick="refreshMilestones()">Refresh</button>
-            </div>
-          </div>
-          
-          <div id="milestonesContent">
-            <div class="loading">
-              <div class="loading-spinner"></div>
-              Loading milestones...
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Grace Requests Tab -->
-      <div id="grace" class="tab-content">
-        <div class="empty-state">
-          <div class="empty-state-icon">⏰</div>
-          <div class="empty-state-title">Grace Requests</div>
-          <div class="empty-state-text">This feature is coming soon. Directors will be able to review and approve grace period requests here.</div>
-        </div>
-      </div>
-      
-      <!-- Reports Tab -->
-      <div id="reports" class="tab-content">
-        <div class="content-section">
-          <div class="section-header">
-            <h2 class="section-title">Reports & Analytics</h2>
-          </div>
-          
-          <div style="text-align: center; padding: 40px;">
-            <button onclick="generateMonthlyReport()" 
-                    style="padding: 16px 32px; background: linear-gradient(135deg, #007bff, #0056b3); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(0,123,255,0.3);">
-              Generate Monthly Report
-            </button>
-          </div>
-          
-          <div id="reportResults"></div>
-        </div>
-      </div>
-      
-      <!-- Bulk Operations Tab -->
-      <div id="bulk" class="tab-content">
-        <div class="empty-state">
-          <div class="empty-state-icon">⚙️</div>
-          <div class="empty-state-title">Bulk Operations</div>
-          <div class="empty-state-text">This feature is coming soon. Directors will be able to perform bulk operations on multiple records here.</div>
-        </div>
-      </div>
-    </div>
-  </div>
+      <script>
+        const sessionId = ${JSON.stringify(sessionId)};
 
-  <script>
-    // Helper Functions
-    function $(id) { return document.getElementById(id); }
-    
-    // Tab Management
-    function showTab(tabName) {
-      // Hide all tabs
-      const tabs = document.querySelectorAll('.tab-content');
-      tabs.forEach(tab => tab.classList.remove('active'));
-      
-      // Remove active class from nav tabs
-      const navTabs = document.querySelectorAll('.nav-tab');
-      navTabs.forEach(tab => tab.classList.remove('active'));
-      
-      // Show selected tab
-      $(tabName).classList.add('active');
-      
-      // Add active class to corresponding nav tab
-      const activeNavTab = Array.from(navTabs).find(tab => 
-        tab.querySelector('button').onclick.toString().includes(tabName)
-      );
-      if (activeNavTab) {
-        activeNavTab.classList.add('active');
-      }
-      
-      // Load tab-specific content
-      switch(tabName) {
-        case 'milestones':
-          loadMilestonesContent();
-          break;
-        case 'employees':
-          // Employee search is ready
-          break;
-      }
-    }
-    
-    // Logout Function
-    function logout() {
-      if (confirm('Are you sure you want to logout?')) {
-        window.location.href = window.location.href.split('?')[0];
-      }
-    }
-    
-    // Data Loading
-    function loadDashboardData() {
-      console.log('Loading director dashboard data...');
-      
-      google.script.run
-        .withSuccessHandler(function(data) {
-          console.log('Dashboard data received:', data);
+        // ---------- Helper Functions ----------
+        function $(id) { return document.getElementById(id); }
+
+        // ---------- Event Listeners Setup ----------
+        document.addEventListener('DOMContentLoaded', function() {
+          console.log('🎯 DIRECTOR DASHBOARD LOADED');
           
-          $('pendingCount').textContent = data.pendingMilestones || 0;
-          $('probationCount').textContent = data.activeProbation || 0;
-          $('graceCount').textContent = data.graceRequests || 0;
-          $('eventsCount').textContent = data.monthlyEvents || 0;
+          // Attach button event listeners
+          $('logoutBtn').addEventListener('click', logout);
+          $('employeeSearchBtn').addEventListener('click', showEmployeeSearch);
+          $('pendingMilestonesBtn').addEventListener('click', showPendingMilestones);
+          $('graceRequestsBtn').addEventListener('click', showGraceRequests);
+          $('reportsBtn').addEventListener('click', showReports);
+          $('bulkOperationsBtn').addEventListener('click', showBulkOperations);
           
-          // Load recent milestones
-          loadRecentMilestones();
-        })
-        .withFailureHandler(function(err) {
-          console.error('Error loading dashboard data:', err);
-          $('pendingCount').textContent = 'Error';
-          $('probationCount').textContent = 'Error';
-          $('graceCount').textContent = 'Error';
-          $('eventsCount').textContent = 'Error';
-        })
-        .getDirectorDashboardData();
-    }
-    
-    function loadRecentMilestones() {
-      google.script.run
-        .withSuccessHandler(function(milestones) {
-          const container = $('recent-milestones');
+          // Load dashboard data
+          loadDashboardData();
+        });
+        
+        function logout() {
+          console.log('Director logout clicked');
+          window.open('?page=login', '_top');
+        }
+        
+        // ---------- Dashboard Functions ----------
+        function loadDashboardData() {
+          console.log('Loading director dashboard data...');
           
-          if (milestones.length === 0) {
-            container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">✅</div><div class="empty-state-title">All Clear!</div><div class="empty-state-text">No pending milestones at this time.</div></div>';
-            return;
+          google.script.run
+            .withSuccessHandler(function(data) {
+              console.log('✅ Director dashboard data received:', data);
+              
+              $('pendingCount').textContent = data.pendingMilestones || 0;
+              $('probationCount').textContent = data.activeProbation || 0;
+              $('graceCount').textContent = data.graceRequests || 0;
+              $('eventsCount').textContent = data.monthlyEvents || 0;
+              
+              // Load pending milestones
+              loadPendingMilestones();
+            })
+            .withFailureHandler(function(err) {
+              console.error('❌ Error loading director dashboard data:', err);
+              $('pendingCount').textContent = 'Error';
+              $('probationCount').textContent = 'Error';
+              $('graceCount').textContent = 'Error';
+              $('eventsCount').textContent = 'Error';
+            })
+            .getDirectorDashboardData();
+        }
+          
+        function loadPendingMilestones() {
+          console.log('Loading pending milestones...');
+          
+          google.script.run
+            .withSuccessHandler(function(milestones) {
+              const container = $('pending-milestones-list');
+              if (milestones.length === 0) {
+                container.innerHTML = '<p>No pending milestones.</p>';
+                return;
+              }
+              
+              let html = '<h3>Pending Milestones Requiring Attention</h3>';
+              milestones.forEach(function(milestone) {
+                html += '<div class="pending-milestones">' +
+                  '<strong>' + milestone.employee + '</strong> - ' + milestone.milestone + 
+                  ' (Row: ' + milestone.row + ')' +
+                  '<button onclick="assignDirector(' + milestone.row + ')">Assign Director</button>' +
+                  '<button onclick="viewDetails(' + milestone.row + ')">View Details</button>' +
+                  '</div>';
+              });
+              container.innerHTML = html;
+            })
+            .withFailureHandler(function(err) {
+              console.error('❌ Error loading pending milestones:', err);
+              $('pending-milestones-list').innerHTML = '<p>Error loading milestones</p>';
+            })
+            .getPendingMilestones();
+        }
+        
+        function assignDirector(row) {
+          const director = prompt('Enter director name:');
+          if (director) {
+            google.script.run
+              .withSuccessHandler(function() { loadPendingMilestones(); })
+              .assignMilestoneDirector(row, director);
           }
-          
-          let html = '';
-          milestones.slice(0, 5).forEach(function(milestone) {
-            html += '<div class="milestone-card">' +
-              '<div class="milestone-header">' +
-                '<div class="milestone-employee">' + milestone.employee + '</div>' +
-                '<div class="milestone-status status-pending">Pending</div>' +
-              '</div>' +
-              '<div class="milestone-title">' + milestone.milestone + '</div>' +
-              '<div class="milestone-actions">' +
-                '<button class="btn-small btn-assign" onclick="assignDirector(' + milestone.row + ')">Assign</button>' +
-                '<button class="btn-small btn-view" onclick="viewMilestoneDetails(' + milestone.row + ')">View</button>' +
-              '</div>' +
-            '</div>';
-          });
-          
-          container.innerHTML = html;
-        })
-        .withFailureHandler(function(err) {
-          console.error('Error loading recent milestones:', err);
-          $('recent-milestones').innerHTML = '<div class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-title">Error</div><div class="empty-state-text">Failed to load milestones.</div></div>';
-        })
-        .getPendingMilestones();
-    }
-    
-    function loadMilestonesContent() {
-      const container = $('milestonesContent');
-      container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading milestones...</div>';
-      
-      google.script.run
-        .withSuccessHandler(function(milestones) {
-          if (milestones.length === 0) {
-            container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">✅</div><div class="empty-state-title">All Clear!</div><div class="empty-state-text">No pending milestones at this time.</div></div>';
-            return;
-          }
-          
-          let html = '';
-          milestones.forEach(function(milestone) {
-            html += '<div class="milestone-card">' +
-              '<div class="milestone-header">' +
-                '<div class="milestone-employee">' + milestone.employee + '</div>' +
-                '<div class="milestone-status status-pending">Pending</div>' +
-              '</div>' +
-              '<div class="milestone-title">' + milestone.milestone + '</div>' +
-              '<div class="milestone-actions">' +
-                '<button class="btn-small btn-assign" onclick="assignDirector(' + milestone.row + ')">Assign Director</button>' +
-                '<button class="btn-small btn-view" onclick="viewMilestoneDetails(' + milestone.row + ')">View Details</button>' +
-              '</div>' +
-            '</div>';
-          });
-          
-          container.innerHTML = html;
-        })
-        .withFailureHandler(function(err) {
-          console.error('Error loading milestones:', err);
-          container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-title">Error</div><div class="empty-state-text">Failed to load milestones.</div></div>';
-        })
-        .getPendingMilestones();
-    }
-    
-    // Action Functions
-    function assignDirector(row) {
-      const director = prompt('Enter director name for assignment:');
-      if (director && director.trim()) {
-        google.script.run
-          .withSuccessHandler(function() {
-            loadRecentMilestones();
-            if ($('milestonesContent')) {
-              loadMilestonesContent();
-            }
-          })
-          .assignMilestoneDirector(row, director.trim());
-      }
-    }
-    
-    function viewMilestoneDetails(row) {
-      alert('Milestone details for row ' + row + ' - Feature coming soon!');
-    }
-    
-    function searchEmployees() {
-      const query = $('employeeSearch').value.trim();
-      if (!query) {
-        alert('Please enter a search term');
-        return;
-      }
-      
-      const resultsDiv = $('employeeResults');
-      resultsDiv.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Searching...</div>';
-      
-      google.script.run
-        .withSuccessHandler(function(results) {
-          if (results.length === 0) {
-            resultsDiv.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-title">No Results</div><div class="empty-state-text">No employees found matching your search.</div></div>';
-            return;
-          }
-          
-          let html = '<div style="margin-top: 20px;">';
-          results.forEach(function(employee) {
-            html += '<div class="milestone-card" style="margin-bottom: 12px;">' +
-              '<div class="milestone-employee">' + employee.employee + '</div>' +
-              '<div style="color: #6c757d; font-size: 14px;">' + employee.email + ' • ' + employee.role + '</div>' +
-            '</div>';
-          });
-          html += '</div>';
-          
-          resultsDiv.innerHTML = html;
-        })
-        .withFailureHandler(function(err) {
-          console.error('Error searching employees:', err);
-          resultsDiv.innerHTML = '<div class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-title">Error</div><div class="empty-state-text">Failed to search employees.</div></div>';
-        })
-        .searchEmployees(query);
-    }
-    
-    function generateMonthlyReport() {
-      const resultsDiv = $('reportResults');
-      resultsDiv.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Generating report...</div>';
-      
-      google.script.run
-        .withSuccessHandler(function(report) {
-          resultsDiv.innerHTML = '<div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 20px;"><h3>Monthly Report Generated</h3><pre>' + JSON.stringify(report, null, 2) + '</pre></div>';
-        })
-        .withFailureHandler(function(err) {
-          console.error('Error generating report:', err);
-          resultsDiv.innerHTML = '<div class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-title">Error</div><div class="empty-state-text">Failed to generate report.</div></div>';
-        })
-        .generateMonthlyReport();
-    }
-    
-    function refreshData() {
-      loadDashboardData();
-    }
-    
-    function refreshMilestones() {
-      loadMilestonesContent();
-    }
-    
-    function showAllMilestones() {
-      showTab('milestones');
-    }
-    
-    // Initialize
-    document.addEventListener('DOMContentLoaded', function() {
-      console.log('Director dashboard loaded');
-      loadDashboardData();
-    });
-  </script>
-</body>
-</html>
+        }
+        
+        function showEmployeeSearch() {
+          window.open('?session=' + encodeURIComponent(sessionId) + '&page=employeeSearch', '_top');
+        }
+        
+        function showPendingMilestones() {
+          console.log('Showing pending milestones');
+          $('content-area').innerHTML = '<h3>Pending Milestones</h3><div id="milestones-container">Loading...</div>';
+          loadPendingMilestones();
+        }
+        
+        function showGraceRequests() {
+          console.log('Showing grace requests');
+          $('content-area').innerHTML = '<h3>Grace Requests</h3><div id="grace-container">Coming soon...</div>';
+        }
+        
+        function showReports() {
+          console.log('Showing reports');
+          $('content-area').innerHTML = '<h3>Reports</h3><button onclick="generateMonthlyReport()">Generate Monthly Report</button><div id="report-container"></div>';
+        }
+        
+        function showBulkOperations() {
+          console.log('Showing bulk operations');
+          $('content-area').innerHTML = '<h3>Bulk Operations</h3><div id="bulk-container">Coming soon...</div>';
+        }
+      </script>
+    </body>
+    </html>
   `)
     .setTitle('CLEAR — Director Dashboard')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
@@ -1600,7 +1405,7 @@ function renderDirectorDashboard(user) {
 }
 
 // For directors
-function renderLeadDashboard(user) {
+function renderLeadDashboard(user, sessionId) {
   return HtmlService.createHtmlOutput(`
     <!DOCTYPE html>
     <html>
@@ -1653,6 +1458,8 @@ function renderLeadDashboard(user) {
       </div>
       
       <script>
+        const sessionId = ${JSON.stringify(sessionId)};
+
         // Load dashboard data
         google.script.run
           .withSuccessHandler(function(data) {
@@ -1699,8 +1506,7 @@ function renderLeadDashboard(user) {
         }
         
         function showEmployeeSearch() {
-          // Switch to employee search view
-          document.getElementById('content-area').innerHTML = '<h3>Employee Search</h3><input type="text" id="searchInput" placeholder="Search employees..."><button onclick="searchEmployees()">Search</button><div id="searchResults"></div>';
+          window.open('?session=' + encodeURIComponent(sessionId) + '&page=employeeSearch', '_top');
         }
         
         function showPendingMilestones() {
@@ -1720,7 +1526,7 @@ function renderLeadDashboard(user) {
     .setSandboxMode(HtmlService.SandboxMode.NATIVE);
 }
 
-function renderEmployeeDashboard(user) {
+function renderEmployeeDashboard(user, sessionId) {
   return HtmlService.createHtmlOutput(`
 <!DOCTYPE html>
 <html>
@@ -1827,7 +1633,10 @@ function renderEmployeeDashboard(user) {
   </div>
 
   <script>
-    let currentInfractionId = null;
+    const sessionId = ${JSON.stringify(sessionId)};
+    function logout() {
+      window.open('?page=login', '_top');
+    }
     
     // Load dashboard data on page load
     document.addEventListener('DOMContentLoaded', function() {
@@ -1985,7 +1794,14 @@ function renderEmployeeDashboard(user) {
 </body>
 </html>
   `).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .setSandboxMode(HtmlService.SandboxMode.NATIVE);
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+}
+
+function renderEmployeeSearchPage(user, sessionId) {
+  return HtmlService.createHtmlOutputFromFile('employeeLookup')
+    .setTitle('CLEAR — Employee Search')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 
 
