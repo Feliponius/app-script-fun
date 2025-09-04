@@ -125,19 +125,26 @@ function setGraceRowOnLedger_(ledgerRow, graceChildRow) {
 /** ===== Tier utils ===== */
 function normalizeTier(t) {
   var s = String(t || '').trim().toLowerCase();
+  
+  // Handle universal credit types first
+  if (isUniversalCreditType(s)) return 'universal';
+  
   if (s === 'min' || s === 'minor') return 'minor';
   if (s === 'mod' || s === 'moderate') return 'moderate';
   if (s === 'maj' || s === 'major') return 'major';
   return '';
 }
+
 function tierRank(t) {
   switch (normalizeTier(t)) {
-    case 'minor': return 1;
-    case 'moderate': return 2;
+    case 'universal': return 4;  // Highest tier - can cover any requirement
     case 'major': return 3;
+    case 'moderate': return 2;
+    case 'minor': return 1;
     default: return 0;
   }
 }
+
 function isTierAtLeast(haveTier, needTier) {
   return tierRank(haveTier) >= tierRank(needTier);
 }

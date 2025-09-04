@@ -37,9 +37,169 @@ function onFormSubmit(e){
   }, 30000);
 }
 
+/**
+ * handlePerformanceOnSubmit
+ * Called when a Performance Issue event is submitted
+ */
+function handlePerformanceOnSubmit(rowIndex) {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var ctx = rowCtx_(events, rowIndex);
+    
+    // Set initial performance case stage
+    if (CONFIG.COLS.PerfCaseStage) {
+      ctx.set(CONFIG.COLS.PerfCaseStage, 'Open');
+    }
+    
+    // Set initial pending status
+    if (CONFIG.COLS.PendingStatus) {
+      ctx.set(CONFIG.COLS.PendingStatus, 'Pending GA Assignment');
+    }
+    
+    logInfo_ && logInfo_('handlePerformanceOnSubmit', { row: rowIndex });
+  } catch (err) {
+    logError && logError('handlePerformanceOnSubmit', err, { row: rowIndex });
+  }
+}
 
-
-
+/**
+ * handlePerformanceEdit
+ * Handles performance-related edits in the Events sheet
+ * Returns true if handled, false otherwise
+ */
+function handlePerformanceEdit(e) {
+  try {
+    if (!e || !e.range || !e.range.getSheet) return false;
+    
+    var sh = e.range.getSheet();
+    var eventsTab = (CONFIG && CONFIG.TABS && CONFIG.TABS.EVENTS) ? CONFIG.TABS.EVENTS : 'Events';
+    if (sh.getName() !== eventsTab) return false;
+    
+    var row = e.range.getRow();
+    if (row < 2) return false; // Skip header row
+    
+    var col = e.range.getColumn();
+    var hdrs = headers_(sh);
+    var colName = hdrs[col - 1] || '';
+    var ctx = rowCtx_(sh, row);
+    
+    // Check if this is a performance-related edit
+    var eventType = String(ctx.get(CONFIG.COLS.EventType) || '').trim();
+    if (eventType.toLowerCase() !== 'performance issue') return false;
+    
+    // Handle GA open + deadline entry
+    if (colName === CONFIG.COLS.PerfDeadline) {
+      var deadline = e.value;
+      if (deadline && deadline !== e.oldValue) {
+        // GA is now open, update stage and status
+        if (CONFIG.COLS.PerfCaseStage) {
+          ctx.set(CONFIG.COLS.PerfCaseStage, 'GA Open');
+        }
+        if (CONFIG.COLS.PendingStatus) {
+          ctx.set(CONFIG.COLS.PendingStatus, 'Pending GA Decision');
+        }
+        if (CONFIG.COLS.PerfGADate) {
+          ctx.set(CONFIG.COLS.PerfGADate, new Date());
+        }
+        
+        logInfo_ && logInfo_('handlePerformanceEdit_ga_opened', { row: row, deadline: deadline });
+      }
+    }
+    
+    // Handle GA decision (success/failure)
+    if (colName === CONFIG.COLS.PerfGADecision) {
+      var decision = String(e.value || '').trim().toLowerCase();
+      var oldDecision = String(e.oldValue || '').trim().toLowerCase();
+      
+      if (decision && decision !== oldDecision) {
+        var action = '';
+        var templateId = '';
+        
+        if (decision === 'success' || decision === 'passed') {
+          action = 'Return to Good Standing';
+          templateId = CONFIG.TEMPLATES.PERF_GA_SUCCESS;
+          
+          // Update performance case stage
+          if (CONFIG.COLS.PerfCaseStage) {
+            ctx.set(CONFIG.COLS.PerfCaseStage, 'GA Success');
+          }
+          if (CONFIG.COLS.PendingStatus) {
+            ctx.set(CONFIG.COLS.PendingStatus, 'Completed');
+          }
+          
+        } else if (decision === 'failure' || decision === 'failed') {
+          // Check if this is a greater reduction case
+          var infraction = String(ctx.get(CONFIG.COLS.Infraction) || '').toLowerCase();
+          if (infraction.indexOf('greater reduction') !== -1) {
+            action = 'Greater Reduction';
+            templateId = CONFIG.TEMPLATES.PER_GREATER_REDUCTION;
+          } else {
+            action = 'Performance Failure Termination';
+            templateId = CONFIG.TEMPLATES.PERF_TERMINATION;
+          }
+          
+          // Update performance case stage
+          if (CONFIG.COLS.PerfCaseStage) {
+            ctx.set(CONFIG.COLS.PerfCaseStage, 'GA Failure');
+          }
+          if (CONFIG.COLS.PendingStatus) {
+            ctx.set(CONFIG.COLS.PendingStatus, 'Pending Termination');
+          }
+        }
+        
+        // Create consequence PDF for the decision
+        if (action && templateId) {
+          try {
+            var pdfId = createConsequencePdf_(row, action);
+            logInfo_ && logInfo_('handlePerformanceEdit_decision_pdf', { 
+              row: row, 
+              decision: decision, 
+              action: action, 
+              pdfId: pdfId 
+            });
+          } catch (pdfErr) {
+            logError && logError('handlePerformanceEdit_decision_pdf_err', pdfErr, { 
+              row: row, 
+              decision: decision, 
+              action: action 
+            });
+          }
+        }
+        
+        // Update Perf NoPickup dates if applicable
+        if (decision === 'failure' || decision === 'failed') {
+          var today = new Date();
+          var endDate = new Date(today);
+          endDate.setDate(endDate.getDate() + 30); // 30 days from today
+          
+          if (CONFIG.COLS.Perf_NoPickup) {
+            ctx.set(CONFIG.COLS.Perf_NoPickup, today);
+          }
+          if (CONFIG.COLS.Perf_NoPickup_End) {
+            ctx.set(CONFIG.COLS.Perf_NoPickup_End, endDate);
+          }
+          if (CONFIG.COLS.Per_NoPickup_Active) {
+            ctx.set(CONFIG.COLS.Per_NoPickup_Active, true);
+          }
+        }
+        
+        logInfo_ && logInfo_('handlePerformanceEdit_decision', { 
+          row: row, 
+          decision: decision, 
+          action: action 
+        });
+      }
+    }
+    
+    return true; // Handled
+  } catch (err) {
+    logError && logError('handlePerformanceEdit', err, { 
+      row: e.range ? e.range.getRow() : 'unknown',
+      col: e.range ? e.range.getColumn() : 'unknown'
+    });
+    return false;
+  }
+}
 
 
 // 2) SINGLE dispatcher you point your installable trigger at.
@@ -57,7 +217,12 @@ function onAnyEdit(e){
         try { if (handleGraceEdit(e)) return; } catch(err){ logError && logError('handleGraceEdit', err); }
       }
 
-      // 1.5) Row visibility (Active/Grace) — run early so UI feels instant
+      // 1.5) Performance edit handling — after grace, before other handlers
+      if (typeof handlePerformanceEdit === 'function') {
+        try { if (handlePerformanceEdit(e)) return; } catch(err){ logError && logError('handlePerformanceEdit', err); }
+      }
+
+      // 1.6) Row visibility (Active/Grace) — run early so UI feels instant
       if (typeof handleVisibilityOnEdit_ === 'function') {
         try { handleVisibilityOnEdit_(e); } catch(err){ logError && logError('handleVisibilityOnEdit_', err); } // <-- fixed label
       }

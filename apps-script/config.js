@@ -63,6 +63,15 @@ var CONFIG = {
     Perf_NoPickup: 'Perf_NoPickup',
     Perf_NoPickup_End: 'Perf_NoPickup_End',
     Per_NoPickup_Active: 'Per_NoPickup_Active',
+    
+    // Performance Issue Tracking Columns
+    PerfIssueCount: 'Perf Issue Count',                    // Count of Performance Issues for employee
+    PerfGrowthPlanDate: 'Perf Growth Plan Date',          // When growth plan was assigned
+    PerfGrowthPlanDeadline: 'Perf Growth Plan Deadline',  // Growth plan deadline
+    PerfGrowthPlanDecision: 'Perf Growth Plan Decision',  // Success/Failure decision
+    PerfReductionStatus: 'Perf Reduction Status',         // None/Indefinite/Greater
+    PerfReturnToGoodStanding: 'Perf Return to Good Standing', // Date returned to good standing
+    
     Linked_Event_ID: 'Linked_Event_ID',
     PdfLink: 'Write-Up PDF',
     Signed: 'Signed_PDF_Link',
@@ -126,12 +135,14 @@ var CONFIG = {
     POLICY_PROTECTED: '',
     PROBATION_FAILURE: '1ejCM7pVhzgal6STKECGop9QeRcuQ8bjzAP1y0QIk3jI',
     EMP_HISTORY: '1aHEEchp3HDbuzlKEQ57iDr_F3L9Dm5PKG1qm6KceGs8',
-    PERF_ISSUE: '',
-    PERF_GA:'',
-    PERF_GA_SUCCESS:'',
-    PERF_INDEFINITE_REDUCTION:'',
-    PER_GREATER_REDUCTION:'',
-    PERF_TERMINATION:''
+    
+    // Performance Issue Templates
+    PERF_ISSUE: '1wpGcqxTMxaL1P4m1kuj8KCpw05ZFL4o9J4Un6F0UTEs',                    // Performance Issue documentation
+    PERF_GROWTH_PLAN: '1s_wH0JCGl6f9tlUsf8QI6SNSG7nWS2BprjCehjZtQSM',              // Growth Plan consequence (after 2 Performance Issues)
+    PERF_GREATER_REDUCTION: '1fJegqntStZU25dgzb5cTIsTxsmefaw-mEbsr3T-_Q2I',        // Greater Reduction consequence
+    PERF_FAILURE_TERMINATION: '1heDEgCl6EShhQuIeY7xPv7MTuflCY3h5lHh_96HyFl4',       // Performance Failure Termination
+    PERF_GA_SUCCESS: '1r9b-36yxz_IYiAWanWY_9gRwrJ5J6OntTeR3CjbC9aM',                                                             // Return to Good Standing (MISSING - needs template ID)
+    PERF_INDEFINITE_REDUCTION: '1kpvI5ANwn_ehyyzXzOcCqr6J_F2tUKo1ENf4yAqnoiM'                                                    // Indefinite Reduction (MISSING - needs template ID)
   },
 
   // Optional: map template token names to source keys (used by buildPdfDataFromRow_)
@@ -163,7 +174,8 @@ CONFIG.FORM_TO_EVENTS = {
   "Lead": "Lead",
   "Positive Action": "PositiveAction",
   "Infraction": "Infraction",
-  "Incident Description": "IncidentDescription",
+  "Incident Description": "IncidentDescription",           // For disciplinary events
+  "Performance Incident Description": "IncidentDescription", // For performance issues
   "Corrective Actions": "CorrectiveActions",
   "Team Member Statement": "TeamMemberStatement"
 };

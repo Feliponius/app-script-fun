@@ -562,18 +562,65 @@ function _onFormSubmit_impl(e){
       }
     }catch(pbErr){ logError('onSubmit_probationBlock_err', pbErr, {row:targetRow}); }
 
-    // Create Event PDF (idempotent)
+    // Create Event PDF (idempotent) - BUT SKIP Performance Issues
     try{
-      var pdfHdr=CONFIG.COLS.PdfLink||'Write-Up PDF', pdfIdx=map[pdfHdr]||0,
-          existing=(pdfIdx?String(events.getRange(targetRow,pdfIdx).getValue()||''):'');
-      if (!existing){
-        var pdfId=null;
-        try{ if (typeof createEventRecordPdf_==='function') pdfId=createEventRecordPdf_(targetRow); }catch(pErr){ logError('onSubmit_createPdf', pErr, {row:targetRow}); }
-        logInfo_('onSubmit_pdf', 'created '+(pdfId||'null')+' row='+targetRow);
+      var eventType = String(ctx.get(CONFIG.COLS.EventType) || '').trim();
+      var isPerformanceIssue = eventType.toLowerCase() === 'performance issue';
+      
+      if (!isPerformanceIssue) {
+        var pdfHdr=CONFIG.COLS.PdfLink||'Write-Up PDF', pdfIdx=map[pdfHdr]||0,
+            existing=(pdfIdx?String(events.getRange(targetRow,pdfIdx).getValue()||''):'');
+        if (!existing){
+          var pdfId=null;
+          try{ if (typeof createEventRecordPdf_==='function') pdfId=createEventRecordPdf_(targetRow); }catch(pErr){ logError('onSubmit_createPdf', pErr, {row:targetRow}); }
+          logInfo_('onSubmit_pdf', 'created '+(pdfId||'null')+' row='+targetRow);
+        } else {
+          logInfo_('onSubmit_pdf','skip existing row='+targetRow);
+        }
       } else {
-        logInfo_('onSubmit_pdf','skip existing row='+targetRow);
+        logInfo_('onSubmit_pdf','skip performance issue - will create specific PDF below');
       }
     }catch(e3){ logError('onSubmit_pdf_top', e3, {row:targetRow}); }
+
+    // Performance Issue handling (CORRECTED)
+    try {
+      var eventType = String(ctx.get(CONFIG.COLS.EventType) || '').trim();
+      if (eventType.toLowerCase() === 'performance issue') {
+        // Performance Issues generate 0 points
+        if (map[CONFIG.COLS.Points]) {
+          events.getRange(targetRow, map[CONFIG.COLS.Points]).setValue(0);
+        }
+        
+        // Performance Issues should use PERF_ISSUE template, not EVENT_RECORD
+        // We need to create a separate PDF using the PERF_ISSUE template
+        try {
+          var perfPdfId = createConsequencePdf_(targetRow, 'Performance Issue');
+          if (perfPdfId) {
+            // Update the PDF link to point to the PERF_ISSUE PDF instead of EVENT_RECORD
+            var pdfHdr = CONFIG.COLS.PdfLink || 'Write-Up PDF';
+            var pdfIdx = map[pdfHdr] || 0;
+            if (pdfIdx) {
+              var perfPdfUrl = 'https://drive.google.com/file/d/' + perfPdfId + '/view';
+              setRichLinkSafe(events, targetRow, pdfHdr, 'View PDF', perfPdfUrl);
+            }
+          }
+          logInfo_('onSubmit_perf_pdf', 'created performance issue PDF: ' + (perfPdfId || 'null') + ' row=' + targetRow);
+        } catch (perfPdfErr) {
+          logError && logError('onSubmit_perf_pdf_err', perfPdfErr, { row: targetRow });
+        }
+        
+        // Update Performance Issue count and check for Growth Plan trigger
+        try {
+          if (typeof handlePerformanceIssueSubmit === 'function') {
+            handlePerformanceIssueSubmit(targetRow);
+          }
+        } catch (perfErr) {
+          logError && logError('onSubmit_perf_handler_err', perfErr, { row: targetRow });
+        }
+      }
+    } catch (perfTopErr) {
+      logError && logError('onSubmit_perf_top_err', perfTopErr, { row: targetRow });
+    }
 
     // 🔔 Slack: notify docs channel once PDF exists (disciplinary/milestone only)
     try{
