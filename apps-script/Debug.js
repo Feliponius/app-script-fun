@@ -11,6 +11,60 @@ function health() {
   return out;
 }
 
+function diagClaimPreflight(rowNumber){
+  const eventsTab = (CONFIG && CONFIG.TABS && CONFIG.TABS.EVENTS) || 'Events';
+  const s = sh_(eventsTab);
+  const hdrs = headers_(s);
+  const row = Number(rowNumber);
+  const c = (name)=>hdrs.indexOf(name)+1;
+
+  const hDirector = (CONFIG && CONFIG.COLS && CONFIG.COLS.ConsequenceDirector) || 'Consequence Director';
+  const hPending  = (CONFIG && CONFIG.COLS && CONFIG.COLS.PendingStatus) || 'Pending Status';
+  const hMilestone= (CONFIG && CONFIG.COLS && CONFIG.COLS.Milestone) || 'Milestone';
+  const pdfHeaders = [
+    (CONFIG && CONFIG.COLS && CONFIG.COLS.PdfLink) || 'Write-Up PDF',
+    (CONFIG && CONFIG.COLS && CONFIG.COLS.WriteUpPDF) || 'Write-Up PDF',
+    (CONFIG && CONFIG.COLS && CONFIG.COLS.WriteupPDF) || 'WriteupPDF',
+    (CONFIG && CONFIG.COLS && CONFIG.COLS.SignedPDFLink) || 'Signed_PDF_Link',
+    'Signed_PDF_Link',
+    'Write-Up PDF',
+    'WriteUpPDF',
+    'WriteupPDF'
+  ];
+
+  const sheetNameOk = s.getName() === eventsTab;
+  const colDirectorIdx = c(hDirector);
+  const colPendingIdx  = c(hPending);
+  const colMilestoneIdx= c(hMilestone);
+
+  const directorVal = colDirectorIdx ? String(s.getRange(row, colDirectorIdx).getDisplayValue()||'').trim() : '';
+  const pendingVal  = colPendingIdx ? String(s.getRange(row, colPendingIdx).getDisplayValue()||'').trim() : '';
+  const milestoneVal= colMilestoneIdx ? String(s.getRange(row, colMilestoneIdx).getDisplayValue()||'').trim() : '';
+
+  const pdfValues = pdfHeaders.map(h=>{
+    const idx = hdrs.indexOf(h);
+    const v = (idx !== -1) ? String(s.getRange(row, idx+1).getDisplayValue()||'').trim() : '';
+    return { header:h, present:(idx!==-1), value:v };
+  });
+
+  const anyPdfFilled = pdfValues.some(x=>x.present && !!x.value);
+
+  Logger.log(JSON.stringify({
+    sheetNameOk,
+    eventsTab,
+    row,
+    headers: { directorHeaderInConfig:hDirector, pendingHeaderInConfig:hPending, milestoneHeaderInConfig:hMilestone },
+    headerPresence: {
+      director: colDirectorIdx>0,
+      pending: colPendingIdx>0,
+      milestone: colMilestoneIdx>0
+    },
+    values: { directorVal, pendingVal, milestoneVal },
+    pdfCells: pdfValues,
+    anyPdfFilled
+  }, null, 2));
+}
+
 function debug_export_pdf_once(){
   // Use your known-good template & destination (prod ones if possible)
   var tpl = CONFIG.TEMPLATES.EVENT_RECORD;
@@ -1121,5 +1175,63 @@ function testDocsApiAvailable() {
     DriveApp.getFileById(docId).setTrashed(true);
   } catch (e) {
     Logger.log('Docs API not available or permission denied: %s', String(e));
+  }
+}
+
+function debugHeaders() {
+  try {
+    var sh = sh_(CONFIG.TABS.EVENTS);
+    var headers = headers_(sh);
+    var map = headerIndexMap_(sh);
+    
+    Logger.log('All headers in Events sheet:');
+    headers.forEach(function(h, i) {
+      Logger.log((i+1) + ': "' + h + '"');
+    });
+    
+    Logger.log('\nProbation-related headers in map:');
+    for (var key in map) {
+      if (key.toLowerCase().includes('probation')) {
+        Logger.log('"' + key + '" -> column ' + map[key]);
+      }
+    }
+    
+    Logger.log('\nCONFIG.COLS.ProbationEnd = "' + CONFIG.COLS.ProbationEnd + '"');
+    Logger.log('Map lookup for Probation_End: ' + map[CONFIG.COLS.ProbationEnd]);
+    
+  } catch(e) {
+    Logger.log('Error: ' + e.toString());
+  }
+}
+
+function debugGraceApplication(rowIndex) {
+  try {
+    var sh = sh_(CONFIG.TABS.EVENTS);
+    var hmap = headerMap(sh);
+    var row = sh.getRange(rowIndex, 1, 1, sh.getLastColumn()).getValues()[0];
+    
+    function getBy(names, def){
+      names = Array.isArray(names) ? names : [names];
+      for (var i=0;i<names.length;i++){
+        var c = hmap[names[i]];
+        if (c) return row[c-1];
+      }
+      return def;
+    }
+    
+    var employee = String(getBy(['Employee'],'')).trim();
+    Logger.log('Employee: ' + employee);
+    
+    var credits = listAvailableCreditsForEmployee(employee);
+    Logger.log('Available credits: ' + JSON.stringify(credits));
+    
+    var reqTier = normalizeTier(getBy(['Required Tier','Required Grace Tier'],'minor'));
+    Logger.log('Required tier: ' + reqTier);
+    
+    var chosen = pickSufficientCredit(credits, reqTier);
+    Logger.log('Chosen credit: ' + JSON.stringify(chosen));
+    
+  } catch(e) {
+    Logger.log('Error: ' + e.toString());
   }
 }

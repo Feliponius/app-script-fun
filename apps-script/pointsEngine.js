@@ -142,6 +142,7 @@ function appendMilestoneRow_(triggerRow, milestoneName, rollingPoints){
 
 
 
+
 function cancelPendingMilestonesForSource_(eventRow){
   try{
     var s = sh_(CONFIG.TABS.EVENTS);
@@ -512,13 +513,6 @@ function applyGraceForEventRow(eventRow, directorName, reason, opts){
   }catch(_){ return false; }
 }
 
-// Legacy consumer (employee+tier) — deprecated; NO-OP that reports false
-function consumeCredit(employee, tierName, directorName, appliedEventRow, reason, opts){
-  // pointsEngine no longer owns consumption; use grace.gs selection/consumption instead
-  try{ Logger.log('consumeCredit (pointsEngine) is deprecated; use grace.gs'); }catch(_){}
-  return null;
-}
-
 // Universal credit helpers — delegate to grace.gs if available, else benign defaults
 function countUniversalCredits_(employee){
   try{
@@ -567,6 +561,776 @@ function isUniversalCreditType_(creditType){
   if (typeof isUniversalCreditType === 'function') return isUniversalCreditType(creditType);
   var s = String(creditType||'').toLowerCase();
   return s === 'all' || s === 'universal' || s.indexOf('all-points') !== -1 || s.indexOf('all points') !== -1 || s.indexOf('universal credit') !== -1;
+}
+
+/**
+ * handlePerformanceOnSubmit
+ * Called when a Performance Issue event is submitted
+ * Sets initial performance case stage and pending status
+ */
+function handlePerformanceOnSubmit(rowIndex) {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var map = headerIndexMap_(events);
+    var ctx = rowCtx_(events, rowIndex);
+    
+    // Set initial performance case stage
+    var perfStageCol = map[CONFIG.COLS.PerfCaseStage] || map['Perf Case Stage'] || 0;
+    if (perfStageCol) {
+      events.getRange(rowIndex, perfStageCol).setValue('Open');
+    }
+    
+    // Set initial pending status
+    var pendingCol = map[CONFIG.COLS.PendingStatus] || map['Pending Status'] || 0;
+    if (pendingCol) {
+      events.getRange(rowIndex, pendingCol).setValue('Pending GA Assignment');
+    }
+    
+    logInfo_ && logInfo_('handlePerformanceOnSubmit', { row: rowIndex });
+  } catch (err) {
+    logError && logError('handlePerformanceOnSubmit', err, { row: rowIndex });
+  }
+}
+
+/**
+ * checkPerformanceDeadlines
+ * Scans all performance cases and checks for overdue deadlines
+ * Returns count of overdue cases found
+ */
+function checkPerformanceDeadlines() {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var map = headerIndexMap_(events);
+    var last = events.getLastRow();
+    if (last < 2) return 0;
+    
+    var cEventType = map[CONFIG.COLS.EventType] || map['EventType'] || 0;
+    var cPerfStage = map[CONFIG.COLS.PerfCaseStage] || map['Perf Case Stage'] || 0;
+    var cPerfDeadline = map[CONFIG.COLS.PerfDeadline] || map['Perf Deadline'] || 0;
+    var cEmployee = map[CONFIG.COLS.Employee] || map['Employee'] || 0;
+    var cPendingStatus = map[CONFIG.COLS.PendingStatus] || map['Pending Status'] || 0;
+    
+    if (!cEventType || !cPerfStage || !cPerfDeadline || !cEmployee) {
+      logInfo_ && logInfo_('checkPerformanceDeadlines', 'missing required columns');
+      return 0;
+    }
+    
+    var maxCol = Math.max(cEventType, cPerfStage, cPerfDeadline, cEmployee, cPendingStatus);
+    var values = events.getRange(2, 1, last - 1, maxCol).getValues();
+    var overdueCount = 0;
+    var today = new Date();
+    today.setHours(0, 0, 0, 0); // Start of day for comparison
+    
+    for (var i = 0; i < values.length; i++) {
+      var row = values[i];
+      var rowNum = i + 2;
+      
+      // Check if this is a performance issue
+      var eventType = String(row[cEventType - 1] || '').trim().toLowerCase();
+      if (eventType !== 'performance issue') continue;
+      
+      // Check if case is still open
+      var stage = String(row[cPerfStage - 1] || '').trim();
+      if (stage !== 'Open' && stage !== 'GA Open') continue;
+      
+      // Check deadline
+      var deadline = row[cPerfDeadline - 1];
+      if (!deadline) continue;
+      
+      var deadlineDate = new Date(deadline);
+      if (isNaN(deadlineDate.getTime())) continue;
+      
+      deadlineDate.setHours(0, 0, 0, 0);
+      
+      if (deadlineDate < today) {
+        // Case is overdue
+        overdueCount++;
+        
+        // Update status to overdue
+        if (cPendingStatus) {
+          events.getRange(rowNum, cPendingStatus).setValue('Overdue');
+        }
+        
+        // Log the overdue case
+        var employee = String(row[cEmployee - 1] || '').trim();
+        logInfo_ && logInfo_('checkPerformanceDeadlines_overdue', {
+          row: rowNum,
+          employee: employee,
+          deadline: deadline,
+          stage: stage
+        });
+      }
+    }
+    
+    logInfo_ && logInfo_('checkPerformanceDeadlines', { overdueCount: overdueCount });
+    return overdueCount;
+    
+  } catch (err) {
+    logError && logError('checkPerformanceDeadlines', err);
+    return 0;
+  }
+}
+
+/**
+ * shouldEscalatePerf
+ * Determines if a performance case should be escalated based on overdue status
+ * Returns true if case should be escalated, false otherwise
+ */
+function shouldEscalatePerf(employee) {
+  try {
+    if (!employee) return false;
+    
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var map = headerIndexMap_(events);
+    var last = events.getLastRow();
+    if (last < 2) return false;
+    
+    var cEventType = map[CONFIG.COLS.EventType] || map['EventType'] || 0;
+    var cEmployee = map[CONFIG.COLS.Employee] || map['Employee'] || 0;
+    var cPerfStage = map[CONFIG.COLS.PerfCaseStage] || map['Perf Case Stage'] || 0;
+    var cPerfDeadline = map[CONFIG.COLS.PerfDeadline] || map['Perf Deadline'] || 0;
+    var cPendingStatus = map[CONFIG.COLS.PendingStatus] || map['Pending Status'] || 0;
+    
+    if (!cEventType || !cEmployee || !cPerfStage || !cPerfDeadline) {
+      return false;
+    }
+    
+    var maxCol = Math.max(cEventType, cEmployee, cPerfStage, cPerfDeadline, cPendingStatus);
+    var values = events.getRange(2, 1, last - 1, maxCol).getValues();
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Find the most recent performance issue for this employee
+    var latestPerfCase = null;
+    var latestRowNum = 0;
+    
+    for (var i = values.length - 1; i >= 0; i--) {
+      var row = values[i];
+      var rowNum = i + 2;
+      var emp = String(row[cEmployee - 1] || '').trim();
+      
+      if (emp.toLowerCase() !== employee.toLowerCase()) continue;
+      
+      var eventType = String(row[cEventType - 1] || '').trim().toLowerCase();
+      if (eventType !== 'performance issue') continue;
+      
+      // Found the most recent performance issue
+      latestPerfCase = row;
+      latestRowNum = rowNum;
+      break;
+    }
+    
+    if (!latestPerfCase) return false;
+    
+    // Check if case is still active
+    var stage = String(latestPerfCase[cPerfStage - 1] || '').trim();
+    if (stage !== 'Open' && stage !== 'GA Open') return false;
+    
+    // Check if deadline is overdue
+    var deadline = latestPerfCase[cPerfDeadline - 1];
+    if (!deadline) return false;
+    
+    var deadlineDate = new Date(deadline);
+    if (isNaN(deadlineDate.getTime())) return false;
+    
+    deadlineDate.setHours(0, 0, 0, 0);
+    
+    var isOverdue = deadlineDate < today;
+    
+    // Check if already marked as overdue
+    var pendingStatus = String(latestPerfCase[cPendingStatus - 1] || '').trim();
+    var isAlreadyOverdue = pendingStatus.toLowerCase() === 'overdue';
+    
+    // Should escalate if overdue and not already marked as such
+    var shouldEscalate = isOverdue && !isAlreadyOverdue;
+    
+    if (shouldEscalate) {
+      // Update status to overdue
+      if (cPendingStatus) {
+        events.getRange(latestRowNum, cPendingStatus).setValue('Overdue');
+      }
+      
+      logInfo_ && logInfo_('shouldEscalatePerf_escalated', {
+        employee: employee,
+        row: latestRowNum,
+        deadline: deadline,
+        stage: stage
+      });
+    }
+    
+    return shouldEscalate;
+    
+  } catch (err) {
+    logError && logError('shouldEscalatePerf', err, { employee: employee });
+    return false;
+  }
+}
+
+/**
+ * handlePerformanceIssueSubmit
+ * Called when a Performance Issue event is submitted
+ * Creates PERF_ISSUE PDF and updates count
+ */
+function handlePerformanceIssueSubmit(rowIndex) {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var map = headerIndexMap_(events);
+    var ctx = rowCtx_(events, rowIndex);
+    
+    var employee = String(ctx.get(CONFIG.COLS.Employee) || '').trim();
+    if (!employee) return;
+    
+    // Get current Performance Issue count for this employee
+    var currentCount = getPerformanceIssueCount_(employee, rowIndex);
+    var newCount = currentCount + 1;
+    
+    // Update count in current row
+    var countCol = map[CONFIG.COLS.PerfIssueCount] || map['Perf Issue Count'] || 0;
+    if (countCol) {
+      events.getRange(rowIndex, countCol).setValue(newCount);
+    }
+    
+    // Check if this is the 2nd Performance Issue (trigger Growth Plan)
+    if (newCount === 2) {
+      triggerGrowthPlanConsequence_(employee, rowIndex);
+    }
+    
+    // Check if this is a Performance Issue while on reduction status
+    var reductionStatus = getCurrentReductionStatus_(employee, rowIndex);
+    if (reductionStatus === 'Indefinite') {
+      // Trigger Greater Reduction
+      triggerGreaterReductionConsequence_(employee, rowIndex);
+    } else if (reductionStatus === 'Greater') {
+      // Trigger Performance Failure Termination
+      triggerPerformanceFailureTermination_(employee, rowIndex);
+    }
+    
+    logInfo_ && logInfo_('handlePerformanceIssueSubmit', { 
+      row: rowIndex, 
+      employee: employee, 
+      count: newCount,
+      reductionStatus: reductionStatus
+    });
+    
+  } catch (err) {
+    logError && logError('handlePerformanceIssueSubmit', err, { row: rowIndex });
+  }
+}
+
+/**
+ * getPerformanceIssueCount_
+ * Gets the current count of Performance Issues for an employee
+ */
+function getPerformanceIssueCount_(employee, beforeRow) {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var map = headerIndexMap_(events);
+    var last = events.getLastRow();
+    if (last < 2) return 0;
+    
+    var cEmployee = map[CONFIG.COLS.Employee] || map['Employee'] || 0;
+    var cEventType = map[CONFIG.COLS.EventType] || map['EventType'] || 0;
+    var cActive = map[CONFIG.COLS.Active] || map['Active'] || 0;
+    
+    if (!cEmployee || !cEventType) return 0;
+    
+    var maxCol = Math.max(cEmployee, cEventType, cActive);
+    var values = events.getRange(2, 1, last - 1, maxCol).getValues();
+    var count = 0;
+    
+    for (var i = 0; i < values.length; i++) {
+      var rowNum = i + 2;
+      if (beforeRow && rowNum >= beforeRow) break;
+      
+      var row = values[i];
+      var emp = String(row[cEmployee - 1] || '').trim();
+      var eventType = String(row[cEventType - 1] || '').trim().toLowerCase();
+      var active = cActive ? (row[cActive - 1] === true || String(row[cActive - 1] || '').toLowerCase() === 'true') : true;
+      
+      if (emp.toLowerCase() === employee.toLowerCase() && 
+          eventType === 'performance issue' && 
+          active) {
+        count++;
+      }
+    }
+    
+    return count;
+    
+  } catch (err) {
+    logError && logError('getPerformanceIssueCount_', err, { employee: employee });
+    return 0;
+  }
+}
+
+/**
+ * getCurrentReductionStatus_
+ * Gets the current reduction status for an employee
+ */
+function getCurrentReductionStatus_(employee, beforeRow) {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var map = headerIndexMap_(events);
+    var last = events.getLastRow();
+    if (last < 2) return 'None';
+    
+    var cEmployee = map[CONFIG.COLS.Employee] || map['Employee'] || 0;
+    var cReductionStatus = map[CONFIG.COLS.PerfReductionStatus] || map['Perf Reduction Status'] || 0;
+    var cActive = map[CONFIG.COLS.Active] || map['Active'] || 0;
+    
+    if (!cEmployee || !cReductionStatus) return 'None';
+    
+    var maxCol = Math.max(cEmployee, cReductionStatus, cActive);
+    var values = events.getRange(2, 1, last - 1, maxCol).getValues();
+    
+    // Find the most recent reduction status
+    for (var i = values.length - 1; i >= 0; i--) {
+      var rowNum = i + 2;
+      if (beforeRow && rowNum >= beforeRow) continue;
+      
+      var row = values[i];
+      var emp = String(row[cEmployee - 1] || '').trim();
+      var status = String(row[cReductionStatus - 1] || '').trim();
+      var active = cActive ? (row[cActive - 1] === true || String(row[cActive - 1] || '').toLowerCase() === 'true') : true;
+      
+      if (emp.toLowerCase() === employee.toLowerCase() && active && status) {
+        return status;
+      }
+    }
+    
+    return 'None';
+    
+  } catch (err) {
+    logError && logError('getCurrentReductionStatus_', err, { employee: employee });
+    return 'None';
+  }
+}
+
+/**
+ * triggerGrowthPlanConsequence_
+ * Creates a Growth Plan consequence after 2 Performance Issues
+ * Sets up for director claiming
+ */
+function triggerGrowthPlanConsequence_(employee, triggerRow) {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var map = headerIndexMap_(events);
+    
+    // Create Growth Plan consequence row
+    var consequenceData = {
+      Employee: employee,
+      EventType: 'Performance Milestone',        // Changed from 'Consequence'
+      IncidentDate: new Date(),                  // Added: Set to current date
+      Infraction: 'Growth Plan - Performance Improvement Required',
+      ConsequenceDirector: '', // Leave blank for manual assignment
+      PendingStatus: 'Pending Director Assignment'
+    };
+    
+    // Add to Events sheet
+    var newRow = appendEventsRow_(consequenceData);
+    if (!newRow) return;
+    
+    // Set Performance tracking fields
+    var ctx = rowCtx_(events, newRow);
+    var today = new Date();
+    
+    if (map[CONFIG.COLS.PerfGrowthPlanDate] || map['Perf Growth Plan Date']) {
+      var dateCol = map[CONFIG.COLS.PerfGrowthPlanDate] || map['Perf Growth Plan Date'];
+      events.getRange(newRow, dateCol).setValue(today);
+    }
+    
+    if (map[CONFIG.COLS.PerfReductionStatus] || map['Perf Reduction Status']) {
+      var statusCol = map[CONFIG.COLS.PerfReductionStatus] || map['Perf Reduction Status'];
+      events.getRange(newRow, statusCol).setValue('Growth Plan');
+    }
+    
+    logInfo_ && logInfo_('triggerGrowthPlanConsequence', { 
+      employee: employee, 
+      triggerRow: triggerRow, 
+      consequenceRow: newRow 
+    });
+    
+  } catch (err) {
+    logError && logError('triggerGrowthPlanConsequence_', err, { 
+      employee: employee, 
+      triggerRow: triggerRow 
+    });
+  }
+}
+
+/**
+ * triggerGreaterReductionConsequence_
+ * Creates Greater Reduction consequence for Performance Issue while on Indefinite Reduction
+ * Sets up for director claiming
+ */
+function triggerGreaterReductionConsequence_(employee, triggerRow) {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var map = headerIndexMap_(events);
+    
+    // Create Greater Reduction consequence row
+    var consequenceData = {
+      Employee: employee,
+      EventType: 'Consequence',
+      Infraction: 'Greater Reduction of Hours - Performance Issue on Indefinite Reduction',
+      ConsequenceDirector: '', // Leave blank for manual assignment
+      PendingStatus: 'Pending Director Assignment'
+    };
+    
+    // Add to Events sheet
+    var newRow = appendEventsRow_(consequenceData);
+    if (!newRow) return;
+    
+    // Set Performance tracking fields
+    var statusCol = map[CONFIG.COLS.PerfReductionStatus] || map['Perf Reduction Status'] || 0;
+    if (statusCol) {
+      events.getRange(newRow, statusCol).setValue('Greater');
+    }
+    
+    logInfo_ && logInfo_('triggerGreaterReductionConsequence', { 
+      employee: employee, 
+      triggerRow: triggerRow, 
+      consequenceRow: newRow 
+    });
+    
+  } catch (err) {
+    logError && logError('triggerGreaterReductionConsequence_', err, { 
+      employee: employee, 
+      triggerRow: triggerRow 
+    });
+  }
+}
+
+/**
+ * triggerPerformanceFailureTermination_
+ * Creates Performance Failure Termination for Performance Issue while on Greater Reduction
+ * Sets up for director claiming
+ */
+function triggerPerformanceFailureTermination_(employee, triggerRow) {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var map = headerIndexMap_(events);
+    
+    // Create Performance Failure Termination row
+    var consequenceData = {
+      Employee: employee,
+      EventType: 'Consequence',
+      Infraction: 'Performance Failure Termination - Performance Issue on Greater Reduction',
+      ConsequenceDirector: '', // Leave blank for manual assignment
+      PendingStatus: 'Pending Director Assignment'
+    };
+    
+    // Add to Events sheet
+    var newRow = appendEventsRow_(consequenceData);
+    if (!newRow) return;
+    
+    logInfo_ && logInfo_('triggerPerformanceFailureTermination', { 
+      employee: employee, 
+      triggerRow: triggerRow, 
+      consequenceRow: newRow 
+    });
+    
+  } catch (err) {
+    logError && logError('triggerPerformanceFailureTermination_', err, { 
+      employee: employee, 
+      triggerRow: triggerRow 
+    });
+  }
+}
+
+/**
+ * handleGrowthPlanSuccess_
+ * Handles successful completion of Growth Plan
+ * Creates a new "Return to Good Standing" event
+ */
+function handleGrowthPlanSuccess_(employee, row) {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var today = new Date();
+    
+    // Create new "Return to Good Standing" event row
+    var successEventData = {
+      Employee: employee,
+      EventType: 'Return to Good Standing',
+      IncidentDate: today,
+      Infraction: 'Growth Plan Completed Successfully',
+      Points: 0,
+      PendingStatus: 'Completed'
+    };
+    
+    // Add the new event row
+    var newRow = appendEventsRow_(successEventData);
+    if (newRow) {
+      // Manually create PDF since this bypasses the form submit flow
+      try {
+        var pdfId = null;
+        if (typeof createConsequencePdf_ === 'function') {
+          pdfId = createConsequencePdf_(newRow, 'Return to Good Standing');
+        } else if (typeof createEventRecordPdf_ === 'function') {
+          pdfId = createEventRecordPdf_(newRow);
+        }
+        
+        if (pdfId) {
+          // Write PDF link to the new row
+          var pdfHdr = CONFIG.COLS.PdfLink || 'Write-Up PDF';
+          var pdfUrl = 'https://drive.google.com/file/d/' + pdfId + '/view';
+          setRichLinkSafe(events, newRow, pdfHdr, 'View PDF', pdfUrl);
+        }
+        
+        logInfo_ && logInfo_('handleGrowthPlanSuccess_pdf_created', { 
+          newRow: newRow,
+          employee: employee,
+          pdfId: pdfId
+        });
+      } catch (pdfErr) {
+        logError && logError('handleGrowthPlanSuccess_pdf_err', pdfErr, { 
+          newRow: newRow,
+          employee: employee
+        });
+      }
+      
+      logInfo_ && logInfo_('handleGrowthPlanSuccess_event_created', { 
+        originalRow: row,
+        newRow: newRow,
+        employee: employee
+      });
+    }
+    
+    // Update original Growth Plan row status
+    var ctx = rowCtx_(events, row);
+    ctx.set(CONFIG.COLS.PendingStatus, 'Completed - Success Event Created');
+    
+    // Reset Performance Issue count for this employee
+    resetPerformanceIssueCount_(employee);
+    
+  } catch (err) {
+    logError && logError('handleGrowthPlanSuccess_', err, { employee: employee, row: row });
+  }
+}
+
+/**
+ * handleGrowthPlanFailure_
+ * Handles failed Growth Plan (creates indefinite reduction event)
+ */
+function handleGrowthPlanFailure_(employee, row) {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var today = new Date();
+    
+    // Create new "Indefinite Reduction" event row
+    var failureEventData = {
+      Employee: employee,
+      EventType: 'Performance Milestone',
+      IncidentDate: today,
+      Infraction: 'Growth Plan Failed - Indefinite Hour Reduction',
+      Points: 0,
+      ConsequenceDirector: '', // Leave blank for manual assignment
+      PendingStatus: 'Pending Director Assignment'
+    };
+    
+    // Add the new event row
+    var newRow = appendEventsRow_(failureEventData);
+    if (newRow) {
+      // Set performance tracking fields on the new row
+      var newCtx = rowCtx_(events, newRow);
+      
+      // Set reduction status to Indefinite
+      if (CONFIG.COLS.PerfReductionStatus) {
+        newCtx.set(CONFIG.COLS.PerfReductionStatus, 'Indefinite');
+      }
+      
+      // Manually create PDF since this bypasses the form submit flow
+      try {
+        var pdfId = null;
+        if (typeof createConsequencePdf_ === 'function') {
+          pdfId = createConsequencePdf_(newRow, 'Indefinite Reduction');
+        } else if (typeof createEventRecordPdf_ === 'function') {
+          pdfId = createEventRecordPdf_(newRow);
+        }
+        
+        if (pdfId) {
+          // Write PDF link to the new row
+          var pdfHdr = CONFIG.COLS.PdfLink || 'Write-Up PDF';
+          var pdfUrl = 'https://drive.google.com/file/d/' + pdfId + '/view';
+          setRichLinkSafe(events, newRow, pdfHdr, 'View PDF', pdfUrl);
+        }
+        
+        logInfo_ && logInfo_('handleGrowthPlanFailure_pdf_created', { 
+          newRow: newRow,
+          employee: employee,
+          pdfId: pdfId
+        });
+      } catch (pdfErr) {
+        logError && logError('handleGrowthPlanFailure_pdf_err', pdfErr, { 
+          newRow: newRow,
+          employee: employee
+        });
+      }
+      
+      logInfo_ && logInfo_('handleGrowthPlanFailure_event_created', { 
+        originalRow: row,
+        newRow: newRow,
+        employee: employee
+      });
+    }
+    
+    // Update original Growth Plan row status
+    var ctx = rowCtx_(events, row);
+    ctx.set(CONFIG.COLS.PendingStatus, 'Completed - Failure Event Created');
+    
+  } catch (err) {
+    logError && logError('handleGrowthPlanFailure_', err, { employee: employee, row: row });
+  }
+}
+
+/**
+ * triggerGreaterReductionConsequence_
+ * Creates Greater Reduction consequence for Performance Issue while on Indefinite Reduction
+ * Sets up for director claiming
+ */
+function triggerGreaterReductionConsequence_(employee, triggerRow) {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var map = headerIndexMap_(events);
+    
+    // Create Greater Reduction consequence row
+    var consequenceData = {
+      Employee: employee,
+      EventType: 'Consequence',
+      Infraction: 'Greater Reduction of Hours - Performance Issue on Indefinite Reduction',
+      ConsequenceDirector: '', // Leave blank for manual assignment
+      PendingStatus: 'Pending Director Assignment'
+    };
+    
+    // Add to Events sheet
+    var newRow = appendEventsRow_(consequenceData);
+    if (!newRow) return;
+    
+    // Set Performance tracking fields
+    var statusCol = map[CONFIG.COLS.PerfReductionStatus] || map['Perf Reduction Status'] || 0;
+    if (statusCol) {
+      events.getRange(newRow, statusCol).setValue('Greater');
+    }
+    
+    logInfo_ && logInfo_('triggerGreaterReductionConsequence', { 
+      employee: employee, 
+      triggerRow: triggerRow, 
+      consequenceRow: newRow 
+    });
+    
+  } catch (err) {
+    logError && logError('triggerGreaterReductionConsequence_', err, { 
+      employee: employee, 
+      triggerRow: triggerRow 
+    });
+  }
+}
+
+/**
+ * triggerPerformanceFailureTermination_
+ * Creates Performance Failure Termination for Performance Issue while on Greater Reduction
+ * Sets up for director claiming
+ */
+function triggerPerformanceFailureTermination_(employee, triggerRow) {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var map = headerIndexMap_(events);
+    
+    // Create Performance Failure Termination row
+    var consequenceData = {
+      Employee: employee,
+      EventType: 'Consequence',
+      Infraction: 'Performance Failure Termination - Performance Issue on Greater Reduction',
+      ConsequenceDirector: '', // Leave blank for manual assignment
+      PendingStatus: 'Pending Director Assignment'
+    };
+    
+    // Add to Events sheet
+    var newRow = appendEventsRow_(consequenceData);
+    if (!newRow) return;
+    
+    logInfo_ && logInfo_('triggerPerformanceFailureTermination', { 
+      employee: employee, 
+      triggerRow: triggerRow, 
+      consequenceRow: newRow 
+    });
+    
+  } catch (err) {
+    logError && logError('triggerPerformanceFailureTermination_', err, { 
+      employee: employee, 
+      triggerRow: triggerRow 
+    });
+  }
+}
+
+/**
+ * resetPerformanceIssueCount_
+ * Resets Performance Issue count for an employee after successful Growth Plan
+ */
+function resetPerformanceIssueCount_(employee) {
+  try {
+    var events = sh_(CONFIG.TABS.EVENTS);
+    var map = headerIndexMap_(events);
+    var last = events.getLastRow();
+    if (last < 2) return;
+    
+    var cEmployee = map[CONFIG.COLS.Employee] || map['Employee'] || 0;
+    var cEventType = map[CONFIG.COLS.EventType] || map['EventType'] || 0;
+    var cInfraction = map[CONFIG.COLS.Infraction] || map['Infraction'] || 0;
+    var cNullify = map[CONFIG.COLS.Nullify] || map['Nullify'] || 0;
+    var cCount = map[CONFIG.COLS.PerfIssueCount] || map['Perf Issue Count'] || 0;
+    
+    if (!cEmployee || !cEventType || !cNullify) return;
+    
+    var maxCol = Math.max(cEmployee, cEventType, cInfraction, cNullify, cCount);
+    var values = events.getRange(2, 1, last - 1, maxCol).getValues();
+    var nullifiedCount = 0;
+    var nullifiedGrowthPlans = 0;
+    
+    for (var i = 0; i < values.length; i++) {
+      var rowNum = i + 2;
+      var row = values[i];
+      var emp = String(row[cEmployee - 1] || '').trim();
+      var eventType = String(row[cEventType - 1] || '').trim().toLowerCase();
+      var infraction = cInfraction ? String(row[cInfraction - 1] || '').trim().toLowerCase() : '';
+      var isNullified = row[cNullify - 1] === true || String(row[cNullify - 1] || '').toLowerCase() === 'true';
+      
+      if (emp.toLowerCase() === employee.toLowerCase() && !isNullified) {
+        
+        // Nullify Performance Issues
+        if (eventType === 'performance issue') {
+          events.getRange(rowNum, cNullify).setValue(true);
+          nullifiedCount++;
+        }
+        
+        // Nullify Growth Plan consequences
+        else if (eventType === 'performance milestone' && infraction.indexOf('growth plan') !== -1) {
+          events.getRange(rowNum, cNullify).setValue(true);
+          nullifiedGrowthPlans++;
+        }
+      }
+    }
+    
+    // Reset count to 0 for all rows of this employee
+    // (This ensures the Perf Issue Count column shows 0 even before the next Performance Issue)
+    for (var j = 0; j < values.length; j++) {
+      var rowNum2 = j + 2;
+      var row2 = values[j];
+      var emp2 = String(row2[cEmployee - 1] || '').trim();
+      
+      if (emp2.toLowerCase() === employee.toLowerCase() && cCount) {
+        events.getRange(rowNum2, cCount).setValue("");  // Changed from 0 to ""
+      }
+    }
+    
+    logInfo_ && logInfo_('resetPerformanceIssueCount_', { 
+      employee: employee, 
+      nullifiedPerformanceIssues: nullifiedCount,
+      nullifiedGrowthPlans: nullifiedGrowthPlans
+    });
+    
+  } catch (err) {
+    logError && logError('resetPerformanceIssueCount_', err, { employee: employee });
+  }
 }
 
 

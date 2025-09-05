@@ -125,19 +125,26 @@ function setGraceRowOnLedger_(ledgerRow, graceChildRow) {
 /** ===== Tier utils ===== */
 function normalizeTier(t) {
   var s = String(t || '').trim().toLowerCase();
+  
+  // Handle universal credit types first
+  if (isUniversalCreditType(s)) return 'universal';
+  
   if (s === 'min' || s === 'minor') return 'minor';
   if (s === 'mod' || s === 'moderate') return 'moderate';
   if (s === 'maj' || s === 'major') return 'major';
   return '';
 }
+
 function tierRank(t) {
   switch (normalizeTier(t)) {
-    case 'minor': return 1;
-    case 'moderate': return 2;
+    case 'universal': return 4;  // Highest tier - can cover any requirement
     case 'major': return 3;
+    case 'moderate': return 2;
+    case 'minor': return 1;
     default: return 0;
   }
 }
+
 function isTierAtLeast(haveTier, needTier) {
   return tierRank(haveTier) >= tierRank(needTier);
 }
@@ -544,7 +551,12 @@ function handleGraceEdit(e){
 
     // We only care about Grace / Grace Reason / Graced By
     var watch = ['Grace','Grace Reason','Graced By'];
-    if (watch.indexOf(colName) === -1) return false;
+    if (watch.indexOf(colName) === -1) return false; // ← RETURN FALSE, DON'T CHECK CACHE
+
+    // NOW check cache (only for Grace columns)
+    var cache = (CacheService && CacheService.getScriptCache) ? CacheService.getScriptCache() : null;
+    var key   = cache ? ('grace-row-' + rowIndex) : null;
+    if (cache && cache.get(key)) return true; // ← Only short-circuit actual Grace edits
 
     // Build row context
     var hmap = headerMap(sh);
@@ -569,11 +581,6 @@ function handleGraceEdit(e){
 
     var graceVal = getBy(['Grace'],'');
     var applyNow = truthy(graceVal);
-
-    // Debounce to avoid re-entry loops when we write back
-    var cache = (CacheService && CacheService.getScriptCache) ? CacheService.getScriptCache() : null;
-    var key   = cache ? ('grace-row-' + rowIndex) : null;
-    if (cache && cache.get(key)) return true;
 
     // Required tier: pull from a helper column if you have it, else default to 'minor'
     var reqTier  = (typeof normalizeTier === 'function')

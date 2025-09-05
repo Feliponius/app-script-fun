@@ -9,7 +9,9 @@ function ensureEventHeaders_() {
     "TeamMemberStatement","RedLine","Policy Protected?","FinalPoints","Active","PointsRolling",
     "Milestone","MilestoneDate","Nullify","PointsRolling (Effective)",
     "Probation_Active","Probation_Failure","Probation_Start","Probation_End","Perf_NoPickup",
-    "Perf_NoPickup_End","Per_NoPickup_Active","Linked_Event_ID","Write-Up PDF","Signed_PDF_Link","Audit"
+    "Perf_NoPickup_End","Per_NoPickup_Active","Perf Issue Count","Perf Growth Plan Date",
+    "Perf Growth Plan Deadline","Perf Growth Plan Decision","Perf Reduction Status",
+    "Perf Return to Good Standing","Linked_Event_ID","Write-Up PDF","Signed_PDF_Link","Audit"
   ];
   const cur = headers_(s);
   // Add any missing headers (append to the right)

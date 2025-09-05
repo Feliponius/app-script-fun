@@ -76,6 +76,11 @@ function onDirectorEdit_(e) {
 // Paste this in the same file that contains your onEdit handlers (e.g., guards.gs).
 function onEditMilestoneClaim_(e) {
   try {
+    // Load policy first
+    if (typeof loadPolicyFromSheet_ === 'function') {
+      try { loadPolicyFromSheet_(); } catch(_){}
+    }
+
     if (!e || !e.range || !e.range.getSheet) return;
     var sh = e.range.getSheet();
     if (sh.getName() !== (CONFIG && CONFIG.TABS && CONFIG.TABS.EVENTS)) return;
@@ -197,12 +202,20 @@ function onEditMilestoneClaim_(e) {
 
       // --- enable probation when Tier 2 milestone is claimed (guarded) ---
       try {
+        // DEBUG: Log probation check start
+        Logger.log('=== PROBATION DEBUG START ===');
+        Logger.log('scriptShouldWriteProbation_() = ' + scriptShouldWriteProbation_());
+        
         // Do NOT auto-write probation fields unless explicitly allowed by the feature flag
         if (!scriptShouldWriteProbation_()) {
+          Logger.log('PROBATION SKIP: scriptShouldWriteProbation_() returned false');
           logInfo_ && logInfo_('onEditMilestoneClaim_skipProbation', { row: rowIndex, employee: (ctx ? (ctx.get(CONFIG.COLS.Employee)||'') : ''), milestone: (ctx ? (ctx.get(CONFIG.COLS.Milestone)||'') : '') });
         } else {
+          Logger.log('PROBATION CHECK: Flag is true, proceeding...');
+          
           var employee = '';
           try { employee = ctx ? String(ctx.get(CONFIG.COLS.Employee) || '').trim() : ''; } catch(_) { employee = ''; }
+          Logger.log('Employee: ' + employee);
 
           // compute effective rolling points (prefer row ctx values, then sheet scan)
           var effective = 0;
@@ -212,38 +225,76 @@ function onEditMilestoneClaim_(e) {
           if (!effective) {
             try { effective = Number(getRollingPointsForEmployee_(employee, { beforeRow: rowIndex }) || 0); } catch(_) { effective = Number(effective || 0); }
           }
+          Logger.log('Effective points: ' + effective);
 
           var computedTier = tierForPoints_(effective);
+          Logger.log('Computed tier: ' + computedTier);
 
           // consider Tier 2+ by computedTier OR explicit configured names OR a clear "Level 2/3" label
           var confNameLevel2 = (CONFIG && CONFIG.POLICY && CONFIG.POLICY.MILESTONE_NAMES && CONFIG.POLICY.MILESTONE_NAMES.LEVEL_2) || '';
           var confNameLevel3 = (CONFIG && CONFIG.POLICY && CONFIG.POLICY.MILESTONE_NAMES && CONFIG.POLICY.MILESTONE_NAMES.LEVEL_3) || '';
           var labelTrim = String(milestoneLabel || '').trim();
+          Logger.log('Config Level 2 name: "' + confNameLevel2 + '"');
+          Logger.log('Milestone label: "' + labelTrim + '"');
+          
           var labelMatchesLevel2or3 = (confNameLevel2 && String(confNameLevel2).trim() === labelTrim) || (confNameLevel3 && String(confNameLevel3).trim() === labelTrim);
+          Logger.log('Label matches Level 2/3: ' + labelMatchesLevel2or3);
+          
           var isTier2OrHigher = (Number(computedTier) >= 2) || labelMatchesLevel2or3 || /level\s*[2-9]/i.test(labelTrim);
+          Logger.log('Is Tier 2 or higher: ' + isTier2OrHigher);
+          Logger.log('  - Computed tier >= 2: ' + (Number(computedTier) >= 2));
+          Logger.log('  - Label matches config: ' + labelMatchesLevel2or3);
+          Logger.log('  - Contains "Level 2/3": ' + /level\s*[2-9]/i.test(labelTrim));
 
           if (isTier2OrHigher) {
+            Logger.log('PROBATION WRITE: Tier 2+ detected, setting probation fields...');
+            
             // set probation fields (script is allowed because scriptShouldWriteProbation_() returned true)
-            var suspensionDays = _policyNumber_ ? _policyNumber_('SUSPENSION_L2_DAYS', 7) : 7;
             var probationDays = _policyNumber_ ? _policyNumber_('PROBATION_DAYS', 30) : 30;
-            var startDate = addDaysLocal_ ? addDaysLocal_(new Date(), suspensionDays) : addDaysLocal_(new Date(), suspensionDays); // fallback same name; keep consistent
-            var endDate = addDaysLocal_ ? addDaysLocal_(startDate, probationDays) : startDate;
+            Logger.log('Probation days: ' + probationDays);
+
+            var startDate = new Date(); // Start probation immediately (same day as PDF generation)
+            var endDate = addDaysLocal_ ? addDaysLocal_(startDate, probationDays) : addDaysLocal_(startDate, probationDays);
+            Logger.log('Start date: ' + startDate + ', End date: ' + endDate);
 
             try {
-              if (ctx && CONFIG.COLS.ProbationActive) ctx.set(CONFIG.COLS.ProbationActive, true);
-              if (ctx && CONFIG.COLS.ProbationStart) ctx.set(CONFIG.COLS.ProbationStart, startDate);
-              if (ctx && CONFIG.COLS.ProbationEnd) ctx.set(CONFIG.COLS.ProbationEnd, endDate);
-              if (ctx && CONFIG.COLS.PerfNoPickup) ctx.set(CONFIG.COLS.PerfNoPickup, true);
-              if (ctx && CONFIG.COLS.PerfNoPickupEnd) ctx.set(CONFIG.COLS.PerfNoPickupEnd, endDate);
-              if (ctx && CONFIG.COLS.Per_NoPickup_Active) ctx.set(CONFIG.COLS.Per_NoPickup_Active, true);
+              if (ctx && CONFIG.COLS.ProbationActive) {
+                // ctx.set(CONFIG.COLS.ProbationActive, true);  // COMMENTED OUT - using formula now
+                Logger.log('ProbationActive set via formula (not script)');
+              }
+              if (ctx && CONFIG.COLS.ProbationStart) {
+                ctx.set(CONFIG.COLS.ProbationStart, startDate);
+                Logger.log('Set ProbationStart = ' + startDate);
+              }
+              if (ctx && CONFIG.COLS.ProbationEnd) {
+                ctx.set(CONFIG.COLS.ProbationEnd, endDate);
+                Logger.log('Set ProbationEnd = ' + endDate);
+              }
+              if (ctx && CONFIG.COLS.PerfNoPickup) {
+                ctx.set(CONFIG.COLS.PerfNoPickup, true);
+                Logger.log('Set PerfNoPickup = true');
+              }
+              if (ctx && CONFIG.COLS.PerfNoPickupEnd) {
+                ctx.set(CONFIG.COLS.PerfNoPickupEnd, endDate);
+                Logger.log('Set PerfNoPickupEnd = ' + endDate);
+              }
+              if (ctx && CONFIG.COLS.Per_NoPickup_Active) {
+                ctx.set(CONFIG.COLS.Per_NoPickup_Active, true);
+                Logger.log('Set Per_NoPickup_Active = true');
+              }
               logAudit && logAudit('ProbationAutoSet', 'Probation flags auto-set on claim for ' + employee, rowIndex, { start: formatDate_(startDate), end: formatDate_(endDate), effective: effective });
+              Logger.log('=== PROBATION DEBUG SUCCESS ===');
             } catch (setErr) {
-              logError && logError('onEditMilestoneClaim_setProbation', setErr, { rowIndex: rowIndex, employee: employee });
+              Logger.log('PROBATION ERROR: ' + setErr);
+              logError && logError('onEditMilestoneClaim_setProbation', setErr, { row: rowIndex, employee: employee });
             }
+          } else {
+            Logger.log('PROBATION SKIP: Not Tier 2+ (computedTier=' + computedTier + ', labelMatch=' + labelMatchesLevel2or3 + ')');
           }
         }
       } catch (autoProbErr) {
-        logError && logError('onEditMilestoneClaim_autoProbationOuter', autoProbErr, { rowIndex: rowIndex });
+        Logger.log('PROBATION ERROR: ' + autoProbErr);
+        logError && logError('onEditMilestoneClaim_autoProbationOuter', autoProbErr, { row: rowIndex });
       }
 
     } else {

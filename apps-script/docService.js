@@ -20,7 +20,7 @@ function createEventRecordPdf_(row){
       function isPositiveEvt_(){
         function val(c){ return c ? String(events.getRange(row, c).getDisplayValue() || '').trim().toLowerCase() : ''; }
         var evt = val(cEvt), posA = val(cPosA), posPt = val(cPosPt);
-        // Treat anything that reads like "Positive", "Positive Credit", or “Positive Point Removal” as non-PDF
+        // Treat anything that reads like "Positive", "Positive Credit", or "Positive Point Removal" as non-PDF
         return /^positive/.test(evt) || /^positive/.test(posA) || /^positive/.test(posPt);
       }
 
@@ -112,8 +112,34 @@ function createConsequencePdf_(row, action){
   return withBackoff_('createConsequencePdf', function(){
     var events = sh_(CONFIG.TABS.EVENTS);
     var ctx = rowCtx_(events, row);
-    // build base payload
-    var data = buildPdfDataFromRow_(events, row, { generateWriteUpTitle: true, includeHeaders: true });
+    
+    // Build data using centralized builder if available, otherwise fallback
+    var data;
+    if (typeof buildPdfDataFromRow_ === 'function') {
+      data = buildPdfDataFromRow_(events, row, { generateWriteUpTitle: true, includeHeaders: true });
+    } else {
+      // fallback: read row display values into data (same as createEventRecordPdf_)
+      var hdrs = headers_(events);
+      var rowVals = events.getRange(row,1,1,Math.max(1,hdrs.length)).getDisplayValues()[0] || [];
+      var rowObj = asRowObject_(hdrs, rowVals);
+      data = {
+        Employee: rowObj[CONFIG.COLS.Employee] || '',
+        IncidentDate: rowObj[CONFIG.COLS.IncidentDate] || '',
+        Lead: rowObj[CONFIG.COLS.Lead] || '',
+        RelevantPolicy: rowObj[CONFIG.COLS.RelevantPolicy] || rowObj.Policy || '',
+        Policy: rowObj[CONFIG.COLS.RelevantPolicy] || rowObj.Policy || '',
+        Infraction: rowObj[CONFIG.COLS.Infraction] || '',
+        Description: rowObj[CONFIG.COLS.NotesReviewer] || rowObj.IncidentDescription || '',
+        CorrectiveActions: rowObj[CONFIG.COLS.CorrectiveActions] || '',
+        TeamMemberStatement: rowObj[CONFIG.COLS.TeamMemberStatement] || '',
+        Points: rowObj[CONFIG.COLS.Points] || '',
+        PointsRolling: rowObj[CONFIG.COLS.PointsRollingEffective] || rowObj[CONFIG.COLS.PointsRolling] || ''
+      };
+      // add header names & aliases
+      hdrs.forEach(function(h){ if (h && !data.hasOwnProperty(h)) data[h]=rowObj[h]||''; });
+      Object.keys(Object.assign({}, data)).forEach(function(k){ if(!k) return; var alias = String(k).replace(/[\s\-_]+/g,'').replace(/[^\w]/g,''); if(alias && !data.hasOwnProperty(alias)) data[alias] = data[k]; });
+    }
+    
     // attach action
     data.Action = action || data.Action || '';
 
@@ -121,25 +147,43 @@ function createConsequencePdf_(row, action){
     data.WriteUpTitle = data.WriteUpTitle ||
       ('Write-Up: ' + (data.Employee||'unknown') + ' (' + (data.IncidentDate||'no-date') + ')');
 
-    // choose template (same logic you already had)...
+    // choose template (extended with new performance-related checks)...
     var templateId = null;
+    
+    // Existing 5/10/15/probation logic (preserved)
     if (/(\b5\b|\b5pt\b|level\s*1|milestone\s*5)/i.test(action)) templateId = CONFIG.TEMPLATES.MILESTONE_5;
     else if (/(\b10\b|\b10pt\b|1-?week|one\s*week|level\s*2|milestone\s*10)/i.test(action)) templateId = CONFIG.TEMPLATES.MILESTONE_10;
     else if (/termination/i.test(action)) templateId = CONFIG.TEMPLATES.TERMINATION || CONFIG.TEMPLATES.MILESTONE_15;
     else if (/policy-?protected|policy protected/i.test(action)) templateId = CONFIG.TEMPLATES.POLICY_PROTECTED;
     else if (/probation|failure/i.test(action)) templateId = CONFIG.TEMPLATES.PROBATION_FAILURE;
+    
+    // Performance Issue templates
+    else if (/performance\s*issue/i.test(action)) templateId = CONFIG.TEMPLATES.PERF_ISSUE;
+    else if (/growth\s*plan/i.test(action)) templateId = CONFIG.TEMPLATES.PERF_GROWTH_PLAN;
+    else if (/greater\s*reduction/i.test(action)) templateId = CONFIG.TEMPLATES.PERF_GREATER_REDUCTION;
+    else if (/performance\s*failure\s*termination/i.test(action)) templateId = CONFIG.TEMPLATES.PERF_FAILURE_TERMINATION;
+    else if (/return\s*to\s*good\s*standing/i.test(action)) templateId = CONFIG.TEMPLATES.PERF_GA_SUCCESS;
+    else if (/indefinite\s*reduction/i.test(action)) templateId = CONFIG.TEMPLATES.PERF_INDEFINITE_REDUCTION;
 
-    if (!templateId) throw new Error('No matching template for action: '+action);
+    // Handle EventType-based matching (for new events created by Growth Plan decisions)
+    if (!templateId) {
+      var eventType = String(data.EventType || '').toLowerCase();
+      if (eventType === 'return to good standing') templateId = CONFIG.TEMPLATES.PERF_GA_SUCCESS;
+      else if (eventType === 'performance milestone' && /indefinite.*reduction/i.test(data.Infraction || '')) {
+        templateId = CONFIG.TEMPLATES.PERF_INDEFINITE_REDUCTION;
+      }
+    }
+
+    if (!templateId) throw new Error('No matching template for action: '+action+' (EventType: '+(data.EventType||'none')+')');
 
     // filename
     var filename = data.WriteUpTitle || ('Consequence: ' + slug_(data.Employee || 'unknown') + ' (' + (data.IncidentDate || 'no-date') + ')');
 
-    // merge and write link
+    // merge
     var pdfId = mergeToPdf_(templateId, data, filename);
-    var url = 'https://drive.google.com/file/d/'+pdfId+'/view';
-    try { setRichLinkSafe(events, row, CONFIG.COLS.ConsequencePDF || 'Consequence PDF', 'View PDF', url); } catch(e){ try{ events.getRange(row, headerIndexMap_(events)[CONFIG.COLS.ConsequencePDF]||events.getLastColumn()+1).setValue(url); }catch(_){ } }
+    
     return pdfId;
-  }, 4, 300);
+  }, 4, 250);
 }
 
 // Returns 'TRUE' if the Positive credit earned by this Events row has been consumed.
@@ -549,7 +593,7 @@ function mergeToPdf_(docId, data, outName){
     try { DocumentApp.openById(copyId).saveAndClose(); } catch(_){}
     try { Utilities.sleep(400); } catch(_){}
 
-    // ── Stage E: Export (Docs HTTP first) ────────────────────────────────────
+    // ── Stage E: Export (Docs HTTP first) ──────────────────────────────────
     function exportViaDocsHttp_(){
       var url = 'https://docs.google.com/document/d/' + copyId + '/export?format=pdf';
       var resp = UrlFetchApp.fetch(url, {
@@ -839,12 +883,12 @@ function createEmployeeHistoryPDF_(name, opts) {
     }
     var L2 = Number((CONFIG && CONFIG.POLICY && CONFIG.POLICY.MILESTONES && CONFIG.POLICY.MILESTONES.LEVEL_2) || 10);
 
-    // Compute “current” milestone respecting grace rescinds
+    // Compute "current" milestone respecting grace rescinds
    function computeCurrentMilestone_(){
     // ensure we have a threshold for L2
     var L2 = Number((CONFIG && CONFIG.POLICY && CONFIG.POLICY.MILESTONES && CONFIG.POLICY.MILESTONES.LEVEL_2) || 10);
 
-    // find last milestone-like label in this employee’s rows
+    // find last milestone-like label in this employee's rows
     var lastMilestoneIdx = -1, label = '';
     for (var i = rows.length - 1; i >= 0; i--){
       var t = String(rows[i].milestoneText || '').trim();
@@ -856,7 +900,7 @@ function createEmployeeHistoryPDF_(name, opts) {
     }
     if (lastMilestoneIdx === -1) return '';
 
-    // If it isn’t Probation Failure, just return it.
+    // If it isn't Probation Failure, just return it.
     if (!/probation\s*failure/i.test(label)) return label;
 
     // ---------- Identify triggering event row (last non-milestone with positive points before PF)
@@ -869,7 +913,7 @@ function createEmployeeHistoryPDF_(name, opts) {
     }
 
     // ---------- Was that triggering event later graced?
-    // Prefer explicit columns (Grace Applied + Linked Row); fallback to “grace” text sniff.
+    // Prefer explicit columns (Grace Applied + Linked Row); fallback to "grace" text sniff.
     var pfRescinded = false;
     function isTruthy(v){
       var s = String(v || '').trim().toLowerCase();
@@ -884,7 +928,7 @@ function createEmployeeHistoryPDF_(name, opts) {
         if (applied && linksTrigger) { pfRescinded = true; break; }
       }
     } else {
-      // Heuristic fallback: any later applied grace OR obvious “grace” text → consider PF rescinded
+      // Heuristic fallback: any later applied grace OR obvious "grace" text → consider PF rescinded
       for (var j2 = lastMilestoneIdx + 1; j2 < rows.length; j2++){
         var g2 = rows[j2];
         var applied2 = isTruthy(g2.graceApplied);
@@ -894,7 +938,7 @@ function createEmployeeHistoryPDF_(name, opts) {
       }
     }
 
-    // ---------- Safety: if rolling total is now below L2, PF shouldn’t be shown
+    // ---------- Safety: if rolling total is now below L2, PF shouldn't be shown
     var belowL2Now = (rollingTotal !== '' && !isNaN(Number(rollingTotal)) && Number(rollingTotal) < L2);
 
     if (pfRescinded || belowL2Now) {
