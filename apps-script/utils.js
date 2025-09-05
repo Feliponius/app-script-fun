@@ -693,8 +693,8 @@ function onEdit_CreatePdfWhenDirectorSet(e){
     var cd       = cdCol        ? String(sh.getRange(row, cdCol).getDisplayValue()||'').trim()        : '';
     var existing = map[pdfHdr]  ? String(sh.getRange(row, map[pdfHdr]).getDisplayValue()||'').trim()  : '';
 
-    var isMilestone = evt.toLowerCase() === 'milestone';
-    var isPending   = pending.toLowerCase() === 'pending';
+    var isMilestone = evt.toLowerCase() === 'milestone' || evt.toLowerCase() === 'performance milestone';
+    var isPending   = pending.toLowerCase() === 'pending' || pending.toLowerCase() === 'pending director assignment';
 
     logInfo_('claimed_gate_check', {row, evt, pending, cd, hasPdf: !!existing, isMilestone, isPending});
     if (!(isMilestone && isPending && cd) || existing) return;
@@ -760,11 +760,19 @@ function maybeCreatePdfForMilestoneRow_(sheetNameOrObj, row){
     var cd = map[cdHdr] ? String(sh.getRange(row, map[cdHdr]).getDisplayValue()||'').trim() : '';
 
     logInfo_('claimed_gate_pdfFn', {row, evt, pending, cd, hasPdf: !!existing});
-    if (evt!=='milestone' || pending!=='pending' || existing || !cd) return null;
+    if ((evt!=='milestone' && evt!=='performance milestone') || pending!=='pending' || existing || !cd) return null;
 
     var pdfId = null;
     try{
-      if (typeof inferMilestoneTemplate_ === 'function'){
+      // Check if this is a Performance Milestone event (performance consequences)
+      var infraction = map[CONFIG.COLS.Infraction] ? String(sh.getRange(row, map[CONFIG.COLS.Infraction]).getDisplayValue()||'').trim() : '';
+      var isPerformanceConsequence = /growth plan|greater reduction|performance failure termination|indefinite reduction|return to good standing/i.test(infraction);
+      
+      if (isPerformanceConsequence && typeof createConsequencePdf_ === 'function') {
+        // Use createConsequencePdf_ for performance consequences
+        var action = infraction; // Use the infraction as the action
+        pdfId = createConsequencePdf_(row, action);
+      } else if (typeof inferMilestoneTemplate_ === 'function'){
         var inferred=null; try{ inferred=inferMilestoneTemplate_(row);}catch(_){}
         var chosen=(inferred&&inferred.templateId)||(CONFIG.TEMPLATES&&CONFIG.TEMPLATES.MILESTONE_5)||null;
         if (chosen && typeof createMilestonePdf_==='function') pdfId=createMilestonePdf_(row, chosen);

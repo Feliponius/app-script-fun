@@ -921,8 +921,8 @@ function triggerGrowthPlanConsequence_(employee, triggerRow) {
       EventType: 'Performance Milestone',        // Changed from 'Consequence'
       IncidentDate: new Date(),                  // Added: Set to current date
       Infraction: 'Growth Plan - Performance Improvement Required',
-      ConsequenceDirector: '', // Leave blank for manual assignment
-      PendingStatus: 'Pending Director Assignment'
+      'Consequence Director': '', // Leave blank for manual assignment
+      'Pending Status': 'Pending'
     };
     
     // Add to Events sheet
@@ -970,10 +970,10 @@ function triggerGreaterReductionConsequence_(employee, triggerRow) {
     // Create Greater Reduction consequence row
     var consequenceData = {
       Employee: employee,
-      EventType: 'Consequence',
+      EventType: 'Performance Milestone',
       Infraction: 'Greater Reduction of Hours - Performance Issue on Indefinite Reduction',
-      ConsequenceDirector: '', // Leave blank for manual assignment
-      PendingStatus: 'Pending Director Assignment'
+      'Consequence Director': '', // Leave blank for manual assignment
+      'Pending Status': 'Pending'
     };
     
     // Add to Events sheet
@@ -1013,10 +1013,10 @@ function triggerPerformanceFailureTermination_(employee, triggerRow) {
     // Create Performance Failure Termination row
     var consequenceData = {
       Employee: employee,
-      EventType: 'Consequence',
+      EventType: 'Performance Milestone',
       Infraction: 'Performance Failure Termination - Performance Issue on Greater Reduction',
-      ConsequenceDirector: '', // Leave blank for manual assignment
-      PendingStatus: 'Pending Director Assignment'
+      'Consequence Director': '', // Leave blank for manual assignment
+      'Pending Status': 'Pending'
     };
     
     // Add to Events sheet
@@ -1123,8 +1123,8 @@ function handleGrowthPlanFailure_(employee, row) {
       IncidentDate: today,
       Infraction: 'Growth Plan Failed - Indefinite Hour Reduction',
       Points: 0,
-      ConsequenceDirector: '', // Leave blank for manual assignment
-      PendingStatus: 'Pending Director Assignment'
+      'Consequence Director': '', // Leave blank for manual assignment
+      'Pending Status': 'Pending'
     };
     
     // Add the new event row
@@ -1183,49 +1183,6 @@ function handleGrowthPlanFailure_(employee, row) {
 }
 
 /**
- * triggerGreaterReductionConsequence_
- * Creates Greater Reduction consequence for Performance Issue while on Indefinite Reduction
- * Sets up for director claiming
- */
-function triggerGreaterReductionConsequence_(employee, triggerRow) {
-  try {
-    var events = sh_(CONFIG.TABS.EVENTS);
-    var map = headerIndexMap_(events);
-    
-    // Create Greater Reduction consequence row
-    var consequenceData = {
-      Employee: employee,
-      EventType: 'Consequence',
-      Infraction: 'Greater Reduction of Hours - Performance Issue on Indefinite Reduction',
-      ConsequenceDirector: '', // Leave blank for manual assignment
-      PendingStatus: 'Pending Director Assignment'
-    };
-    
-    // Add to Events sheet
-    var newRow = appendEventsRow_(consequenceData);
-    if (!newRow) return;
-    
-    // Set Performance tracking fields
-    var statusCol = map[CONFIG.COLS.PerfReductionStatus] || map['Perf Reduction Status'] || 0;
-    if (statusCol) {
-      events.getRange(newRow, statusCol).setValue('Greater');
-    }
-    
-    logInfo_ && logInfo_('triggerGreaterReductionConsequence', { 
-      employee: employee, 
-      triggerRow: triggerRow, 
-      consequenceRow: newRow 
-    });
-    
-  } catch (err) {
-    logError && logError('triggerGreaterReductionConsequence_', err, { 
-      employee: employee, 
-      triggerRow: triggerRow 
-    });
-  }
-}
-
-/**
  * triggerPerformanceFailureTermination_
  * Creates Performance Failure Termination for Performance Issue while on Greater Reduction
  * Sets up for director claiming
@@ -1238,10 +1195,10 @@ function triggerPerformanceFailureTermination_(employee, triggerRow) {
     // Create Performance Failure Termination row
     var consequenceData = {
       Employee: employee,
-      EventType: 'Consequence',
+      EventType: 'Performance Milestone',
       Infraction: 'Performance Failure Termination - Performance Issue on Greater Reduction',
-      ConsequenceDirector: '', // Leave blank for manual assignment
-      PendingStatus: 'Pending Director Assignment'
+      'Consequence Director': '', // Leave blank for manual assignment
+      'Pending Status': 'Pending'
     };
     
     // Add to Events sheet
